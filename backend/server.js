@@ -154,9 +154,9 @@ async function seedClientUser() {
 function seedSettings() {
   db.get("SELECT * FROM settings WHERE key = 'whatsapp_phone'", (err, row) => {
     if (!row) {
-      db.run("INSERT INTO settings (key, value) VALUES (?, ?)", ['whatsapp_phone', '5519981242105']);
+      db.run("INSERT INTO settings (key, value) VALUES (?, ?)", ['whatsapp_phone', '5519981242106']);
     } else {
-      db.run("UPDATE settings SET value = ? WHERE key = 'whatsapp_phone'", ['5519981242105']);
+      db.run("UPDATE settings SET value = ? WHERE key = 'whatsapp_phone'", ['5519981242106']);
     }
   });
 }
