@@ -1364,6 +1364,19 @@ function showNotif(msg) {
   setTimeout(() => n.classList.remove('show'), 3000);
 }
 
+// ---- CARROSSEL DE FUNDO COM DESFOQUE (HERO BLUR) ----
+function initHeroBgCarousel() {
+  const slides = document.querySelectorAll('.hero-bg-slide');
+  if (slides.length <= 1) return;
+  let currentSlide = 0;
+
+  setInterval(() => {
+    slides[currentSlide].classList.remove('active');
+    currentSlide = (currentSlide + 1) % slides.length;
+    slides[currentSlide].classList.add('active');
+  }, 4500);
+}
+
 // ---- INICIALIZAÇÃO ----
 document.addEventListener('DOMContentLoaded', async () => {
   await loadStoredPricing();
@@ -1379,6 +1392,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   renderMenuPage();
   updateCart();
   initObserver();
+  initHeroBgCarousel();
   setTimeout(() => {
     carouselUpdate();
     startAutoPlay();

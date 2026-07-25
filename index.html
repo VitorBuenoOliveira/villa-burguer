@@ -257,23 +257,47 @@
 
   /* ======= HOME PAGE ======= */
   .hero {
-    background: var(--bg-hero);
+    position: relative;
     min-height: 85vh;
     display: flex;
     align-items: center;
     justify-content: center;
     text-align: center;
-    position: relative;
-    padding: 4.5rem 1.5rem;
+    padding: 4rem 1.5rem;
+    overflow: hidden;
     border-bottom: 3.5px solid var(--border-strong);
+    background: #121212;
   }
 
-  .hero::before {
-    content: '';
+  .hero-bg-carousel {
     position: absolute;
     inset: 0;
-    background-image: radial-gradient(rgba(230, 81, 0, 0.18) 2px, transparent 2px);
-    background-size: 28px 28px;
+    z-index: 1;
+    overflow: hidden;
+  }
+
+  .hero-bg-slide {
+    position: absolute;
+    inset: -20px;
+    background-size: cover;
+    background-position: center;
+    filter: blur(10px) brightness(0.32) contrast(1.15);
+    transform: scale(1.08);
+    opacity: 0;
+    transition: opacity 1.5s ease-in-out, transform 7s ease-out;
+  }
+
+  .hero-bg-slide.active {
+    opacity: 1;
+    transform: scale(1.02);
+  }
+
+  .hero-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    background: radial-gradient(circle at center, rgba(20, 20, 20, 0.35) 0%, rgba(14, 14, 14, 0.85) 100%),
+                linear-gradient(180deg, rgba(18, 18, 18, 0.5) 0%, rgba(18, 18, 18, 0.95) 100%);
     pointer-events: none;
   }
 
@@ -1475,8 +1499,17 @@
 <div class="page active" id="page-home">
   
   <section class="hero">
+    <!-- CARROSSEL DE FUNDO DESFOCADO (BLUR GOURMET & FOTOS DO LOCAL) -->
+    <div class="hero-bg-carousel">
+      <div class="hero-bg-slide active" style="background-image: url('imgs/img8.png');"></div>
+      <div class="hero-bg-slide" style="background-image: url('imgs/wpp1.jpeg');"></div>
+      <div class="hero-bg-slide" style="background-image: url('imgs/img5.png');"></div>
+      <div class="hero-bg-slide" style="background-image: url('imgs/wpp2.jpeg');"></div>
+    </div>
+    <div class="hero-overlay"></div>
+
     <div class="hero-content fade-in">
-      <img src="imgs/logo.png" style="width:130px; height:130px; border-radius:50%; object-fit:cover; margin-bottom:1rem; border:4px solid var(--primary-orange); box-shadow:var(--shadow-glow);" alt="Villa Burguer">
+      <img src="imgs/logo.png" style="width:95px; height:95px; border-radius:50%; object-fit:cover; margin-bottom:1rem; border:4px solid var(--primary-orange); box-shadow:var(--shadow-glow);" alt="Villa Burguer">
       <br>
       <div class="hero-badge">⭐ O MELHOR ARTESANAL DE HORTOLÂNDIA</div>
       <h1>SABOR INCOMPARÁVEL <span>BURGUER GOURMET</span></h1>
@@ -3488,6 +3521,19 @@ function showNotif(msg) {
   setTimeout(() => n.classList.remove('show'), 3000);
 }
 
+// ---- CARROSSEL DE FUNDO COM DESFOQUE (HERO BLUR) ----
+function initHeroBgCarousel() {
+  const slides = document.querySelectorAll('.hero-bg-slide');
+  if (slides.length <= 1) return;
+  let currentSlide = 0;
+
+  setInterval(() => {
+    slides[currentSlide].classList.remove('active');
+    currentSlide = (currentSlide + 1) % slides.length;
+    slides[currentSlide].classList.add('active');
+  }, 4500);
+}
+
 // ---- INICIALIZAÇÃO ----
 document.addEventListener('DOMContentLoaded', async () => {
   await loadStoredPricing();
@@ -3503,6 +3549,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   renderMenuPage();
   updateCart();
   initObserver();
+  initHeroBgCarousel();
   setTimeout(() => {
     carouselUpdate();
     startAutoPlay();
