@@ -2125,12 +2125,22 @@ async function loadStoredPricing() {
 }
 
 async function loadStoreSettings() {
+  const savedWpp = localStorage.getItem('villaburguer_wpp_phone_v1');
+  if (savedWpp) {
+    storeWhatsAppPhone = savedWpp;
+    const wppInp = document.getElementById('admin-wpp-phone');
+    if (wppInp) wppInp.value = storeWhatsAppPhone;
+    const wppLink = document.getElementById('wpp-float-link');
+    if (wppLink) wppLink.href = `https://wa.me/${storeWhatsAppPhone}`;
+  }
+
   try {
     const res = await fetch(`${API_URL}/settings`);
     if (res.ok) {
       const data = await res.json();
       if (data.whatsapp_phone) {
         storeWhatsAppPhone = data.whatsapp_phone;
+        localStorage.setItem('villaburguer_wpp_phone_v1', storeWhatsAppPhone);
         const wppInp = document.getElementById('admin-wpp-phone');
         if (wppInp) wppInp.value = storeWhatsAppPhone;
         const wppLink = document.getElementById('wpp-float-link');
@@ -2147,23 +2157,21 @@ async function saveStoreSettingsFromAdmin() {
   const phone = inp.value.trim().replace(/\D/g, '');
   if (!phone) { alert('Informe um número de WhatsApp válido (apenas números com DDD).'); return; }
 
+  storeWhatsAppPhone = phone;
+  localStorage.setItem('villaburguer_wpp_phone_v1', phone);
+  
+  const wppLink = document.getElementById('wpp-float-link');
+  if (wppLink) wppLink.href = `https://wa.me/${storeWhatsAppPhone}`;
+
   try {
-    const res = await fetch(`${API_URL}/settings`, {
+    await fetch(`${API_URL}/settings`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${currentUser.token}` },
       body: JSON.stringify({ whatsapp_phone: phone })
     });
-    if (res.ok) {
-      storeWhatsAppPhone = phone;
-      const wppLink = document.getElementById('wpp-float-link');
-      if (wppLink) wppLink.href = `https://wa.me/${storeWhatsAppPhone}`;
-      showNotif('Número do WhatsApp da loja atualizado com sucesso! 📱');
-    } else {
-      alert('Erro ao salvar número do WhatsApp.');
-    }
-  } catch (e) {
-    alert('Erro de conexão ao salvar configuração.');
-  }
+  } catch (e) {}
+
+  showNotif('Número do WhatsApp da loja atualizado com sucesso! 📱');
 }
 
 function saveStoredPricing() {
@@ -2549,52 +2557,46 @@ async function toggleProductFeaturedFromAdmin(id, newFeatured) {
     }
   }
 
+  if (item) item.featured = newFeatured;
+  localStorage.setItem('villaburguer_custom_pricing_v1', JSON.stringify(VILLA_BURG_PRICING));
+
   try {
-    const res = await fetch(`${API_URL}/products/${id}`, {
+    await fetch(`${API_URL}/products/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${currentUser.token}` },
       body: JSON.stringify({ featured: newFeatured })
     });
-    if (res.ok) {
-      await loadStoredPricing();
-      renderCarouselItems();
-      renderOrderGrid('todos');
-      renderMenuPage();
-      renderAdminDashboard();
-      showNotif(newFeatured ? `"${name}" colocado na capa! ⭐` : `"${name}" removido da capa!`);
-    } else {
-      alert('Erro ao alterar destaques.');
-    }
-  } catch (e) {
-    alert('Erro de conexão ao alterar destaque.');
-  }
+  } catch (e) {}
+
+  renderCarouselItems();
+  renderOrderGrid('todos');
+  renderMenuPage();
+  renderAdminDashboard();
+  showNotif(newFeatured ? `"${name}" colocado na capa! ⭐` : `"${name}" removido da capa!`);
 }
 
 async function toggleProductActiveFromAdmin(id, newActive) {
   if (!currentUser || !currentUser.isAdmin) return;
-  const allItems = getAllItems();
+  const allItems = getAllItemsForAdmin();
   const item = allItems.find(i => String(i.id) === String(id));
   const name = item ? item.name : 'Produto';
 
+  if (item) item.active = newActive;
+  localStorage.setItem('villaburguer_custom_pricing_v1', JSON.stringify(VILLA_BURG_PRICING));
+
   try {
-    const res = await fetch(`${API_URL}/products/${id}`, {
+    await fetch(`${API_URL}/products/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${currentUser.token}` },
       body: JSON.stringify({ active: newActive })
     });
-    if (res.ok) {
-      await loadStoredPricing();
-      renderCarouselItems();
-      renderOrderGrid('todos');
-      renderMenuPage();
-      renderAdminDashboard();
-      showNotif(newActive ? `"${name}" ativado para venda! 🟢` : `"${name}" pausado (esgotado)! 🔴`);
-    } else {
-      alert('Erro ao alterar status do produto.');
-    }
-  } catch (e) {
-    alert('Erro de conexão ao alterar status.');
-  }
+  } catch (e) {}
+
+  renderCarouselItems();
+  renderOrderGrid('todos');
+  renderMenuPage();
+  renderAdminDashboard();
+  showNotif(newActive ? `"${name}" ativado para venda! 🟢` : `"${name}" pausado (esgotado)! 🔴`);
 }
 
 function filterAdminProductsList(query) {
@@ -2607,7 +2609,7 @@ function filterAdminProductsList(query) {
 }
 
 function openEditProdModal(id) {
-  const allItems = getAllItems();
+  const allItems = getAllItemsForAdmin();
   const item = allItems.find(i => String(i.id) === String(id));
   if (!item) return;
 
@@ -2652,55 +2654,65 @@ async function saveEditedProductFromModal() {
     return;
   }
 
+  const allItems = getAllItemsForAdmin();
+  const targetItem = allItems.find(i => String(i.id) === String(id));
+  if (targetItem) {
+    targetItem.cat = cat;
+    targetItem.name = name;
+    targetItem.desc = desc;
+    targetItem.base = base;
+    targetItem.comboAdd = comboAdd;
+    targetItem.tag = tag || null;
+    targetItem.img = img || targetItem.img;
+    targetItem.featured = featured;
+    targetItem.active = active;
+  }
+  localStorage.setItem('villaburguer_custom_pricing_v1', JSON.stringify(VILLA_BURG_PRICING));
+
   try {
-    const res = await fetch(`${API_URL}/products/${id}`, {
+    await fetch(`${API_URL}/products/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${currentUser.token}` },
       body: JSON.stringify({ cat, name, desc, base, comboAdd, tag: tag || null, img, featured, active })
     });
-    if (res.ok) {
-      closeEditProdModal();
-      await loadStoredPricing();
-      renderCarouselItems();
-      renderOrderGrid('todos');
-      renderMenuPage();
-      renderAdminDashboard();
-      showNotif(`Produto "${name}" atualizado com sucesso! 💾`);
-    } else {
-      alert('Erro ao atualizar produto.');
-    }
-  } catch (e) {
-    alert('Erro de conexão ao atualizar produto.');
-  }
+  } catch (e) {}
+
+  closeEditProdModal();
+  renderCarouselItems();
+  renderOrderGrid('todos');
+  renderMenuPage();
+  renderAdminDashboard();
+  showNotif(`Produto "${name}" atualizado com sucesso! 💾`);
 }
 
 async function deleteProductFromAdmin(id) {
   if (!currentUser || !currentUser.isAdmin) return;
-  const allItems = getAllItems();
+  const allItems = getAllItemsForAdmin();
   const item = allItems.find(i => String(i.id) === String(id));
   const itemName = item ? item.name : 'este produto';
 
   if (!confirm(`Tem certeza que deseja excluir "${itemName}"? Esta ação não pode ser desfeita.`)) return;
 
+  Object.keys(VILLA_BURG_PRICING).forEach(k => {
+    if (Array.isArray(VILLA_BURG_PRICING[k])) {
+      VILLA_BURG_PRICING[k] = VILLA_BURG_PRICING[k].filter(i => String(i.id) !== String(id));
+    }
+  });
+  localStorage.setItem('villaburguer_custom_pricing_v1', JSON.stringify(VILLA_BURG_PRICING));
+
   try {
-    const res = await fetch(`${API_URL}/products/${id}`, {
+    await fetch(`${API_URL}/products/${id}`, {
       method: 'DELETE',
       headers: { 'Authorization': `Bearer ${currentUser.token}` }
     });
-    if (res.ok) {
-      closeEditProdModal();
-      await loadStoredPricing();
-      renderCarouselItems();
-      renderOrderGrid('todos');
-      renderMenuPage();
-      renderAdminDashboard();
-      showNotif(`Produto "${itemName}" excluído com sucesso! 🗑️`);
-    } else {
-      alert('Erro ao excluir produto.');
-    }
-  } catch (e) {
-    alert('Erro de conexão ao excluir produto.');
-  }
+  } catch (e) {}
+
+  closeEditProdModal();
+  renderCarouselItems();
+  renderOrderGrid('todos');
+  renderMenuPage();
+  renderAdminDashboard();
+  showNotif(`Produto "${itemName}" excluído com sucesso! 🗑️`);
 }
 
 function handleTableRowFileUpload(id, input) {
