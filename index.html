@@ -255,15 +255,19 @@
   .page { display: none; }
   .page.active { display: block; animation: fadeIn 0.4s ease forwards; }
 
+  html {
+    font-size: 15px;
+  }
+
   /* ======= HOME PAGE ======= */
   .hero {
     position: relative;
-    min-height: 85vh;
+    min-height: 80vh;
     display: flex;
     align-items: center;
     justify-content: center;
     text-align: center;
-    padding: 4rem 1.5rem;
+    padding: 3.5rem 1.5rem;
     overflow: hidden;
     border-bottom: 3.5px solid var(--border-strong);
     background: #121212;
@@ -281,23 +285,22 @@
     inset: -20px;
     background-size: cover;
     background-position: center;
-    filter: blur(10px) brightness(0.32) contrast(1.15);
-    transform: scale(1.08);
+    filter: blur(5px) brightness(0.65) contrast(1.08);
+    transform: scale(1.06);
     opacity: 0;
-    transition: opacity 1.5s ease-in-out, transform 7s ease-out;
+    transition: opacity 1.2s ease-in-out, transform 6s ease-out;
   }
 
   .hero-bg-slide.active {
     opacity: 1;
-    transform: scale(1.02);
+    transform: scale(1.01);
   }
 
   .hero-overlay {
     position: absolute;
     inset: 0;
     z-index: 2;
-    background: radial-gradient(circle at center, rgba(20, 20, 20, 0.35) 0%, rgba(14, 14, 14, 0.85) 100%),
-                linear-gradient(180deg, rgba(18, 18, 18, 0.5) 0%, rgba(18, 18, 18, 0.95) 100%);
+    background: radial-gradient(circle at center, rgba(0, 0, 0, 0.25) 0%, rgba(0, 0, 0, 0.65) 100%);
     pointer-events: none;
   }
 
