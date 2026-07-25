@@ -1,7 +1,7 @@
 const API_URL = (window.location.port === '4000') ? '/api' : 'http://localhost:4000/api';
 let VILLA_BURG_PRICING = {};
 let storeStatusOverride = 'auto';
-let storeWhatsAppPhone = '5519998011043';
+let storeWhatsAppPhone = '5519981242105';
 let currentUser = null;
 
 function escapeHTML(str) {
