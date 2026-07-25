@@ -1719,16 +1719,16 @@
 
 <!-- ==================== PAGE: OBRIGADO ==================== -->
 <div class="page" id="page-obrigado">
-  <div style="min-height:80vh; display:flex; align-items:center; justify-content:center; padding:2rem; background:var(--bg-body);">
-    <div style="background:var(--card-white); border-radius:var(--radius-lg); padding:3.5rem 2rem; text-align:center; max-width:520px; box-shadow:var(--shadow-lg); border:2.5px solid var(--border-color);">
-      <span style="font-size:4.5rem;">🎉</span>
-      <h2 style="font-family:'Bebas Neue',sans-serif; font-size:3rem; color:#FFFFFF; -webkit-text-stroke: 1.5px var(--primary-orange); margin:0.8rem 0 0.4rem; text-shadow: 0 2px 5px rgba(0,0,0,0.2);">PEDIDO ENVIADO!</h2>
-      <p style="color:var(--text-muted); line-height:1.6; margin-bottom:1.5rem; font-size:1.05rem;">Seu pedido foi formatado e redirecionado para o nosso WhatsApp.<br>Aguarde nossa equipe confirmar seu pedido!</p>
+  <div style="min-height:80vh; display:flex; align-items:center; justify-content:center; padding:1.5rem 1rem; background:var(--bg-body);">
+    <div style="background:#FFFFFF; border-radius:16px; padding:2.5rem 1.6rem; text-align:center; max-width:520px; width:100%; box-shadow:0 12px 35px rgba(0,0,0,0.18); border:3px solid #141414;">
+      <span style="font-size:4.2rem;">🎉</span>
+      <h2 style="font-family:'Bebas Neue',sans-serif; font-size:3.2rem; color:#141414; margin:0.6rem 0 0.3rem; letter-spacing:2px; text-shadow:none;">PEDIDO ENVIADO!</h2>
+      <p style="color:#222222; line-height:1.5; margin-bottom:1.5rem; font-size:1.05rem; font-weight:700;">Seu pedido foi formatado e redirecionado para o nosso WhatsApp.<br>Aguarde nossa equipe confirmar seu pedido!</p>
       
-      <div id="thanks-summary" style="background:#F4DBC3; padding:1.2rem; border-radius:var(--radius-sm); margin-bottom:1.8rem; text-align:left; border:1.5px solid var(--border-color);"></div>
+      <div id="thanks-summary" style="background:#FFF8E1; padding:1.3rem; border-radius:12px; margin-bottom:1.6rem; text-align:left; border:2px solid #141414; box-shadow:0 4px 12px rgba(0,0,0,0.06);"></div>
       
-      <button class="btn-primary" style="width:100%; margin-bottom:0.8rem;" onclick="showPage('pedido')">🛒 FAZER NOVO PEDIDO</button>
-      <button class="btn-secondary" style="width:100%;" onclick="showPage('home')">🏠 VOLTAR AO INÍCIO</button>
+      <button class="btn-primary" style="width:100%; margin-bottom:0.8rem; border:2px solid #141414; font-weight:900;" onclick="showPage('pedido')">🛒 FAZER NOVO PEDIDO</button>
+      <button style="width:100%; background:#141414; color:#FFFFFF; border:2px solid #141414; padding:0.85rem 1.5rem; font-family:'Barlow Condensed',sans-serif; font-size:1rem; font-weight:800; letter-spacing:1.5px; text-transform:uppercase; border-radius:var(--radius-sm); cursor:pointer; transition:all 0.25s;" onclick="showPage('home')">🏠 VOLTAR AO INÍCIO</button>
     </div>
   </div>
 </div>
@@ -3322,9 +3322,9 @@ async function sendWhatsApp() {
 function showThankYou(items, total) {
   const summary = document.getElementById('thanks-summary');
   if (summary) {
-    summary.innerHTML = `<h4 style="font-family:'Bebas Neue'; font-size:1.5rem; color:var(--primary-orange); margin-bottom:0.6rem;">RESUMO DO PEDIDO</h4>` +
-      items.map(c => `<div style="display:flex; justify-content:space-between; font-size:0.92rem; margin-bottom:0.4rem;"><span>${c.qty}x ${escapeHTML(c.name)}</span><strong>${fmt(c.price * c.qty)}</strong></div>`).join('') +
-      `<div style="display:flex; justify-content:space-between; font-weight:700; font-size:1.15rem; border-top:2px solid var(--border-color); padding-top:0.5rem; margin-top:0.8rem; color:var(--primary-orange);"><span>TOTAL</span><span>${fmt(total)}</span></div>`;
+    summary.innerHTML = `<h4 style="font-family:'Bebas Neue'; font-size:1.6rem; color:#141414; border-bottom:2px solid #141414; padding-bottom:0.4rem; margin-bottom:0.8rem; letter-spacing:1px;">📋 RESUMO DO PEDIDO</h4>` +
+      items.map(c => `<div style="display:flex; justify-content:space-between; font-size:0.95rem; font-weight:700; color:#222222; margin-bottom:0.4rem;"><span>${c.qty}x ${escapeHTML(c.name)}</span><strong style="color:#D84315;">${fmt(c.price * c.qty)}</strong></div>`).join('') +
+      `<div style="display:flex; justify-content:space-between; font-weight:900; font-size:1.2rem; border-top:2px solid #141414; padding-top:0.6rem; margin-top:0.8rem; color:#D84315;"><span>TOTAL</span><span>${fmt(total)}</span></div>`;
   }
   showPage('obrigado');
 }
