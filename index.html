@@ -3263,6 +3263,8 @@ async function sendWhatsApp() {
   const tipo = document.getElementById('f-tipo').value;
   const end = document.getElementById('f-end').value.trim();
   const pag = document.getElementById('f-pag').value;
+  const trocoEl = document.getElementById('f-troco');
+  const troco = trocoEl ? trocoEl.value.trim() : '';
   const obsGeral = document.getElementById('obs-input').value.trim();
 
   if (!nome) { alert('Por favor, informe seu nome.'); return; }
@@ -3322,9 +3324,17 @@ async function sendWhatsApp() {
   msg += `_Enviado via Cardápio Digital Villa Burguer_ ✨`;
 
   const orderSnapshot = [...cart];
-  const orderTotal = total;
+  const orderTotal = (tipo === 'entrega') ? grandTotal : subtotal;
 
-  window.open(`https://wa.me/${storeWhatsAppPhone}?text=${encodeURIComponent(msg)}`, '_blank');
+  const waUrl = `https://wa.me/${storeWhatsAppPhone}?text=${encodeURIComponent(msg)}`;
+  try {
+    const win = window.open(waUrl, '_blank');
+    if (!win || win.closed || typeof win.closed === 'undefined') {
+      window.location.href = waUrl;
+    }
+  } catch(e) {
+    window.location.href = waUrl;
+  }
 
   cart = [];
   selectedCombo = {};
