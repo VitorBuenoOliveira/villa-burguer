@@ -3284,25 +3284,42 @@ async function sendWhatsApp() {
     }
   }
 
-  let msg = `🍔 *NOVO PEDIDO - VILLA BURGUER*\n\n`;
-  msg += `👤 *Nome:* ${nome}\n`;
-  msg += `📞 *WhatsApp:* ${tel}\n`;
-  msg += tipo === 'entrega' ? `🛵 *Entrega em:* ${end}\n` : `🏪 *Retirada no local*\n`;
-  msg += `💳 *Pagamento:* ${pag}\n`;
-  msg += `------------------\n`;
-  msg += `📋 *ITENS DO PEDIDO:*\n`;
+  const deliveryTax = (tipo === 'entrega') ? 5 : 0;
+  const subtotal = total;
+  const grandTotal = total + deliveryTax;
 
-  cart.forEach(c => {
+  let msg = `*🍔 NOVO PEDIDO - VILLA BURGUER 🍔*\n`;
+  msg += `═════════════════════════\n\n`;
+  msg += `*👤 CLIENTE:* ${nome}\n`;
+  msg += `*📱 WHATSAPP:* ${tel}\n`;
+  msg += (tipo === 'entrega') ? `*🛵 TIPO:* Delivery (Entrega em Domicílio)\n*📍 ENDEREÇO:* ${end}\n` : `*🏪 TIPO:* Retirada no Balcão\n`;
+  msg += `*💳 PAGAMENTO:* ${pag}\n`;
+  if (troco) msg += `*💵 TROCO PARA:* ${troco}\n`;
+
+  msg += `\n─────────────────────────\n`;
+  msg += `*🛍️ ITENS DO PEDIDO:*\n\n`;
+
+  cart.forEach((c, idx) => {
     const itemObs = getItemObs(c.id);
-    msg += `• ${c.qty}x ${c.name} — ${fmt(c.price * c.qty)}`;
-    if (itemObs) msg += ` _(Obs: ${itemObs})_`;
+    msg += ` *${idx + 1}.* *${c.qty}x ${c.name}* - ${fmt(c.price * c.qty)}\n`;
+    if (c.isCombo) msg += `    _└ Combo (Batata + Bebida)_ \n`;
+    if (itemObs) msg += `    _└ Obs: ${itemObs}_\n`;
     msg += `\n`;
   });
 
-  msg += `------------------\n`;
-  msg += `💰 *TOTAL: ${fmt(total)}*`;
-  if (obsGeral) msg += `\n\n📝 *Obs Geral:* ${obsGeral}`;
-  msg += `\n\n_Pedido gerado via site Villa Burguer_`;
+  msg += `─────────────────────────\n`;
+  msg += `*💰 RESUMO FINANCEIRO:*\n`;
+  msg += ` ▫️ Subtotal: ${fmt(subtotal)}\n`;
+  if (tipo === 'entrega') msg += ` ▫️ Taxa de Entrega: ${fmt(deliveryTax)}\n`;
+  msg += ` *🔥 TOTAL DO PEDIDO: ${fmt(tipo === 'entrega' ? grandTotal : subtotal)}*\n`;
+
+  if (obsGeral) {
+    msg += `\n─────────────────────────\n`;
+    msg += `*📝 OBSERVAÇÕES DO PEDIDO:*\n_${obsGeral}_\n`;
+  }
+
+  msg += `\n═════════════════════════\n`;
+  msg += `_Enviado via Cardápio Digital Villa Burguer_ ✨`;
 
   const orderSnapshot = [...cart];
   const orderTotal = total;
