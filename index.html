@@ -3286,12 +3286,16 @@ async function sendWhatsApp() {
     }
   }
 
+  const orderNum = Math.floor(1000 + Math.random() * 9000);
+  const orderId = `PED-${orderNum}`;
+
   const deliveryTax = (tipo === 'entrega') ? 5 : 0;
   const subtotal = total;
   const grandTotal = total + deliveryTax;
 
-  let msg = `*🍔 NOVO PEDIDO - VILLA BURGUER 🍔*\n`;
+  let msg = `*🍔 NOVO PEDIDO - VILLA BURGUER (#${orderId}) 🍔*\n`;
   msg += `═════════════════════════\n\n`;
+  msg += `*🆔 CÓDIGO DO PEDIDO:* #${orderId}\n`;
   msg += `*👤 CLIENTE:* ${nome}\n`;
   msg += `*📱 WHATSAPP:* ${tel}\n`;
   msg += (tipo === 'entrega') ? `*🛵 TIPO:* Delivery (Entrega em Domicílio)\n*📍 ENDEREÇO:* ${end}\n` : `*🏪 TIPO:* Retirada no Balcão\n`;
@@ -3343,13 +3347,13 @@ async function sendWhatsApp() {
   closeModal();
   updateCart();
 
-  showThankYou(orderSnapshot, orderTotal);
+  showThankYou(orderSnapshot, orderTotal, orderId);
 }
 
-function showThankYou(items, total) {
+function showThankYou(items, total, orderId) {
   const summary = document.getElementById('thanks-summary');
   if (summary) {
-    summary.innerHTML = `<h4 style="font-family:'Bebas Neue'; font-size:1.6rem; color:#141414; border-bottom:2px solid #141414; padding-bottom:0.4rem; margin-bottom:0.8rem; letter-spacing:1px;">📋 RESUMO DO PEDIDO</h4>` +
+    summary.innerHTML = `<h4 style="font-family:'Bebas Neue'; font-size:1.6rem; color:#141414; border-bottom:2px solid #141414; padding-bottom:0.4rem; margin-bottom:0.8rem; letter-spacing:1px;">📋 RESUMO DO PEDIDO (${orderId || 'CONFIRMADO'})</h4>` +
       items.map(c => `<div style="display:flex; justify-content:space-between; font-size:0.95rem; font-weight:700; color:#222222; margin-bottom:0.4rem;"><span>${c.qty}x ${escapeHTML(c.name)}</span><strong style="color:#D84315;">${fmt(c.price * c.qty)}</strong></div>`).join('') +
       `<div style="display:flex; justify-content:space-between; font-weight:900; font-size:1.2rem; border-top:2px solid #141414; padding-top:0.6rem; margin-top:0.8rem; color:#D84315;"><span>TOTAL</span><span>${fmt(total)}</span></div>`;
   }
