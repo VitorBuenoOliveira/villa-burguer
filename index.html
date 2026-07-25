@@ -3582,12 +3582,16 @@ function initObserver() {
 }
 
 // ---- HAMBÚRGUER MENU TOGGLE ----
-const mobileToggle = document.getElementById('mobile-toggle');
-const navMenu = document.getElementById('nav-menu');
-
 if (mobileToggle && navMenu) {
-  mobileToggle.addEventListener('click', () => {
+  mobileToggle.addEventListener('click', (e) => {
+    e.stopPropagation();
     navMenu.classList.toggle('open');
+  });
+
+  document.addEventListener('click', (e) => {
+    if (navMenu.classList.contains('open') && !navMenu.contains(e.target) && !mobileToggle.contains(e.target)) {
+      closeMenuMobile();
+    }
   });
 }
 
