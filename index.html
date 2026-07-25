@@ -2317,7 +2317,26 @@ async function processUnifiedLogin() {
       await loadUserOrders();
     }
   } catch(e) {
-    alert('Erro de conexão com o servidor.');
+    // Fallback de teste para GitHub Pages (Modo Demo)
+    if (emailInput === 'admin@villaburguer.com' && passInput === 'villa123') {
+      currentUser = { id: 1, name: 'Administrador (Demo)', email: 'admin@villaburguer.com', isAdmin: 1, token: 'demo_admin_token' };
+      localStorage.setItem('villaburguer_current_user_v1', JSON.stringify(currentUser));
+      updateUserNavUI();
+      closeUserModal();
+      showPage('admin');
+      renderAdminDashboard();
+      showNotif('Modo Demo: Logado como Administrador! 👑');
+      return;
+    } else if (emailInput === 'cliente@villaburguer.com' && passInput === 'cliente123') {
+      currentUser = { id: 2, name: 'Cliente de Teste', email: 'cliente@villaburguer.com', tel: '19998877665', address: 'Rua das Flores, 123 - Bairro Central', isAdmin: 0, token: 'demo_client_token' };
+      localStorage.setItem('villaburguer_current_user_v1', JSON.stringify(currentUser));
+      updateUserNavUI();
+      closeUserModal();
+      showNotif('Modo Demo: Login realizado! Olá, Cliente de Teste 👋');
+      return;
+    }
+
+    alert('Erro de conexão com o servidor. Verifique se a API está rodando.');
   }
 }
 
@@ -2353,7 +2372,11 @@ async function processUserSignup() {
     closeUserModal();
     showNotif('Conta criada com sucesso! Seja bem-vindo, ' + name + '! 🎉');
   } catch(e) {
-    alert('Erro de conexão com o servidor.');
+    currentUser = { id: Date.now(), name, email, tel, address, isAdmin: 0, token: 'demo_token' };
+    localStorage.setItem('villaburguer_current_user_v1', JSON.stringify(currentUser));
+    updateUserNavUI();
+    closeUserModal();
+    showNotif('Modo Demo: Conta criada com sucesso! Seja bem-vindo, ' + name + '! 🎉');
   }
 }
 
