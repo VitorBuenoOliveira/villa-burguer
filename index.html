@@ -123,7 +123,7 @@
     transition: opacity 0.4s ease, visibility 0.4s ease;
   }
 
-  #preloader.hide { opacity: 0; visibility: hidden; }
+  #preloader.hide { opacity: 0; visibility: hidden; pointer-events: none; }
 
   .preloader-logo {
     width: 130px;
@@ -2204,17 +2204,38 @@ function escapeHTML(str) {
     .replace(/'/g, '&#039;');
 }
 
+async function fetchWithTimeout(resource, options = {}) {
+  const { timeout = 1200 } = options;
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeout);
+  try {
+    const response = await fetch(resource, {
+      ...options,
+      signal: controller.signal
+    });
+    clearTimeout(id);
+    return response;
+  } catch (error) {
+    clearTimeout(id);
+    throw error;
+  }
+}
+
 async function loadStoredPricing() {
   try {
-    const res = await fetch(`${API_URL}/products`);
+    const res = await fetchWithTimeout(`${API_URL}/products`, { timeout: 1200 });
     if (res.ok) {
       VILLA_BURG_PRICING = await res.json();
     } else {
       VILLA_BURG_PRICING = DEFAULT_PRICING;
     }
-    
-    await loadStoreSettings();
+  } catch(e) {
+    VILLA_BURG_PRICING = DEFAULT_PRICING;
+  }
+  
+  await loadStoreSettings();
 
+  try {
     const override = localStorage.getItem('villaburguer_store_override_v1');
     if (override) storeStatusOverride = override;
 
@@ -2229,9 +2250,7 @@ async function loadStoredPricing() {
         updateUserNavUI();
       }
     }
-  } catch(e) {
-    VILLA_BURG_PRICING = DEFAULT_PRICING;
-  }
+  } catch(e) {}
 }
 
 async function loadStoreSettings() {
@@ -2249,7 +2268,7 @@ async function loadStoreSettings() {
   if (wppLink) wppLink.href = `https://wa.me/${storeWhatsAppPhone}`;
 
   try {
-    const res = await fetch(`${API_URL}/settings`);
+    const res = await fetchWithTimeout(`${API_URL}/settings`, { timeout: 1200 });
     if (res.ok) {
       const data = await res.json();
       if (data.whatsapp_phone) {
@@ -3636,26 +3655,44 @@ function initHeroBgCarousel() {
   }, 4500);
 }
 
+function hidePreloader() {
+  const pl = document.getElementById('preloader');
+  if (pl) pl.classList.add('hide');
+}
+
 // ---- INICIALIZAÇÃO ----
 document.addEventListener('DOMContentLoaded', async () => {
-  await loadStoredPricing();
-  setTimeout(() => {
-    const pl = document.getElementById('preloader');
-    if (pl) pl.classList.add('hide');
+  // Failsafe: esconde o preloader após no máximo 500ms garantidos
+  const fallbackTimer = setTimeout(() => {
+    hidePreloader();
     checkStoreStatus();
-  }, 1000);
+  }, 500);
 
-  loadCart();
-  renderCarouselItems();
-  renderOrderGrid('todos');
-  renderMenuPage();
-  updateCart();
-  initObserver();
-  initHeroBgCarousel();
-  setTimeout(() => {
-    carouselUpdate();
-    startAutoPlay();
-  }, 150);
+  try {
+    await loadStoredPricing();
+  } catch(e) {
+    console.warn('Erro ao carregar dados remotos, usando padrões locais:', e);
+  } finally {
+    clearTimeout(fallbackTimer);
+    hidePreloader();
+    checkStoreStatus();
+  }
+
+  try {
+    loadCart();
+    renderCarouselItems();
+    renderOrderGrid('todos');
+    renderMenuPage();
+    updateCart();
+    initObserver();
+    initHeroBgCarousel();
+    setTimeout(() => {
+      carouselUpdate();
+      startAutoPlay();
+    }, 150);
+  } catch(e) {
+    console.error('Erro ao renderizar elementos da página:', e);
+  }
 });
 </script>
 
