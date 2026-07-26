@@ -3601,6 +3601,8 @@ function initObserver() {
 }
 
 // ---- HAMBÚRGUER MENU TOGGLE ----
+const mobileToggle = document.getElementById('mobile-toggle');
+const navMenu = document.getElementById('nav-menu');
 if (mobileToggle && navMenu) {
   mobileToggle.addEventListener('click', (e) => {
     e.stopPropagation();
@@ -3660,20 +3662,17 @@ function hidePreloader() {
   if (pl) pl.classList.add('hide');
 }
 
-// ---- INICIALIZAÇÃO ----
-document.addEventListener('DOMContentLoaded', async () => {
-  // Failsafe: esconde o preloader após no máximo 500ms garantidos
-  const fallbackTimer = setTimeout(() => {
-    hidePreloader();
-    checkStoreStatus();
-  }, 500);
+// Failsafe imediato para esconder o preloader independente do estado do DOM
+setTimeout(hidePreloader, 300);
+
+async function initApp() {
+  hidePreloader();
 
   try {
     await loadStoredPricing();
   } catch(e) {
     console.warn('Erro ao carregar dados remotos, usando padrões locais:', e);
   } finally {
-    clearTimeout(fallbackTimer);
     hidePreloader();
     checkStoreStatus();
   }
@@ -3693,7 +3692,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   } catch(e) {
     console.error('Erro ao renderizar elementos da página:', e);
   }
-});
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initApp);
+} else {
+  initApp();
+}
 </script>
 
 </body>
