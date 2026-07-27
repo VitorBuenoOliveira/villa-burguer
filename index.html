@@ -396,6 +396,33 @@
   </div>
 </div>
 
+<!-- MODAL CANCELAMENTO KDS -->
+<div id="cancel-order-modal" class="modal-overlay" onclick="handleModalBackdropClick(event, 'cancel-order-modal')">
+  <div class="modal-card" style="max-width: 480px;">
+    <div class="modal-header" style="background: linear-gradient(135deg, #C62828 0%, #B71C1C 100%);">
+      <h2>⚠️ CANCELAR PEDIDO</h2>
+      <button class="modal-close" onclick="closeCancelOrderModal()" aria-label="Fechar">×</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="cancel-order-id">
+      <p style="font-weight:700; color:var(--text-main); margin-bottom:0.8rem;">Selecione ou digite o motivo do cancelamento:</p>
+      
+      <div style="display:flex; flex-wrap:wrap; gap:0.5rem; margin-bottom:1rem;">
+        <button class="btn-secondary" style="font-size:0.85rem; padding:0.4rem 0.8rem; border-color:#DDD;" onclick="setCancelReason('Falta de ingredientes / estoque')">📦 Sem estoque</button>
+        <button class="btn-secondary" style="font-size:0.85rem; padding:0.4rem 0.8rem; border-color:#DDD;" onclick="setCancelReason('Cliente solicitou o cancelamento')">👤 Pedido do cliente</button>
+        <button class="btn-secondary" style="font-size:0.85rem; padding:0.4rem 0.8rem; border-color:#DDD;" onclick="setCancelReason('Endereço fora da área de entrega')">📍 Fora de entrega</button>
+      </div>
+
+      <div class="form-group">
+        <label>Motivo do Cancelamento *</label>
+        <textarea id="cancel-reason-input" class="form-control" style="height:80px; resize:none;" placeholder="Descreva a justificativa..."></textarea>
+      </div>
+
+      <button class="btn-primary" style="width:100%; background:#C62828;" onclick="submitCancelOrder()">CONFIRMAR CANCELAMENTO</button>
+    </div>
+  </div>
+</div>
+
 <!-- TOAST NOTIFICATION -->
 <div id="notif">Notificação</div>
 
@@ -756,6 +783,7 @@ function handleModalBackdropClick(event, modalId) {
   if (event.target && event.target.id === modalId) {
     if (modalId === 'user-modal') closeUserModal();
     if (modalId === 'cart-modal') closeCartModal();
+    if (modalId === 'cancel-order-modal') closeCancelOrderModal();
   }
 }
 
@@ -1029,19 +1057,48 @@ async function updateOrderStatus(orderId, status, cancelReason = '') {
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${currentUser.token}` },
       body: JSON.stringify({ status, cancelReason })
     });
+    const data = await res.json();
     if (res.ok) {
-      showNotif(`Status do pedido atualizado para ${status}`);
+      showNotif(`Status do pedido #${orderId} alterado para ${status}`);
       loadKdsOrders();
       loadMotoboyOrders();
+    } else {
+      alert(data.error || 'Erro ao atualizar status do pedido.');
     }
-  } catch(e) {}
+  } catch(e) {
+    alert('Erro de conexão ao atualizar status do pedido.');
+  }
 }
 
+let targetCancelOrderId = null;
+
 function cancelOrderPrompt(orderId) {
-  const reason = prompt('Informe o motivo obrigatório do cancelamento:');
-  if (reason && reason.trim()) {
-    updateOrderStatus(orderId, 'cancelado', reason.trim());
+  targetCancelOrderId = orderId;
+  document.getElementById('cancel-order-id').value = orderId;
+  document.getElementById('cancel-reason-input').value = '';
+  document.getElementById('cancel-order-modal').classList.add('open');
+}
+
+function closeCancelOrderModal() {
+  targetCancelOrderId = null;
+  document.getElementById('cancel-order-modal').classList.remove('open');
+}
+
+function setCancelReason(reason) {
+  document.getElementById('cancel-reason-input').value = reason;
+}
+
+async function submitCancelOrder() {
+  const orderId = document.getElementById('cancel-order-id').value || targetCancelOrderId;
+  const reason = document.getElementById('cancel-reason-input').value.trim();
+
+  if (!reason) {
+    alert('Por favor, informe o motivo do cancelamento.');
+    return;
   }
+
+  await updateOrderStatus(orderId, 'cancelado', reason);
+  closeCancelOrderModal();
 }
 
 // 2. RASTREAMENTO EM TEMPO REAL (#page-track)
