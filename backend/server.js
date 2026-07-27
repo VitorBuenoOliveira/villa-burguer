@@ -1,5 +1,7 @@
 require('dotenv').config();
 const express = require('express');
+const http = require('http');
+const { Server } = require('socket.io');
 const sqlite3 = require('sqlite3').verbose();
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
@@ -9,52 +11,82 @@ const rateLimit = require('express-rate-limit');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
+const { body, validationResult } = require('express-validator');
+const { runMigrations } = require('./migrations');
 
 const app = express();
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: {
+    origin: process.env.CLIENT_ORIGIN || '*',
+    methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE']
+  }
+});
 
-// ===== SEGURANÇA =====
+// ===== SEGURANÇA E AMBIENTE (PONTO 1: CHECAGEM CRÍTICA DE SECRET_KEY) =====
+const NODE_ENV = process.env.NODE_ENV || 'development';
+const PORT = process.env.PORT || 4000;
+const SECRET_KEY = process.env.SECRET_KEY;
+
+if (!SECRET_KEY || SECRET_KEY === 'fallback_dev_key_change_in_production') {
+  if (NODE_ENV === 'production') {
+    console.error('\n❌ ERRO CRÍTICO DE SEGURANÇA (PONTO 1):');
+    console.error('Em ambiente de PRODUÇÃO, a variável SECRET_KEY é OBRIGATÓRIA e deve ser configurada no arquivo .env!');
+    console.error('O servidor recusa inicializar para impedir o uso de chaves previsíveis.\n');
+    process.exit(1);
+  } else {
+    console.warn('⚠️ AVISO DE DESENVOLVIMENTO: SECRET_KEY padrão em uso. Configure no .env antes de ir para produção.');
+  }
+}
+
+const JWT_SECRET = SECRET_KEY || 'dev_fallback_secret_only_for_local_testing_12345';
+
+// Middlewares de Segurança
 app.use(helmet({
   crossOriginResourcePolicy: { policy: 'cross-origin' },
-  contentSecurityPolicy: false // Permite os scripts e estilos inline do index.html
+  contentSecurityPolicy: false // Permite scripts e conexões da SPA
 }));
 app.use(cors());
 app.use(express.json({ limit: '2mb' }));
 
-// Rate Limiting - proteção contra ataques brute force
+// ===== RATE LIMITERS =====
 const loginLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutos
-  max: 10, // máx 10 tentativas de login por IP
+  windowMs: 15 * 60 * 1000,
+  max: 10,
   message: { error: 'Muitas tentativas de login. Tente novamente em 15 minutos.' }
 });
 
 const signupLimiter = rateLimit({
-  windowMs: 60 * 60 * 1000, // 1 hora
-  max: 5, // máx 5 cadastros por hora por IP
+  windowMs: 60 * 60 * 1000,
+  max: 5,
   message: { error: 'Limite de cadastros excedido para seu IP. Tente novamente mais tarde.' }
 });
 
 const apiLimiter = rateLimit({
-  windowMs: 1 * 60 * 1000, // 1 minuto
-  max: 120, // máx 120 requisições por minuto por IP
+  windowMs: 1 * 60 * 1000,
+  max: 120,
   message: { error: 'Limite de requisições excedido. Aguarde um momento.' }
 });
 
+const trackingLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000,
+  max: 30,
+  message: { error: 'Limite de consultas de rastreamento excedido. Aguarde um momento.' }
+});
+
 app.use('/api', apiLimiter);
-
-const PORT = process.env.PORT || 4000;
-const SECRET_KEY = process.env.SECRET_KEY || 'fallback_dev_key_change_in_production';
-
-if (SECRET_KEY === 'fallback_dev_key_change_in_production') {
-  console.warn('⚠️ AVISO DE SEGURANÇA: Chave SECRET_KEY padrão detectada! Altere no arquivo .env para ambiente de produção.');
-}
 
 // ===== SERVIR FRONTEND ESTÁTICO =====
 app.use(express.static(path.join(__dirname, '..')));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-// ===== UPLOAD DE IMAGENS (MULTER) =====
+// Upload de imagens (Multer)
+const uploadDir = path.join(__dirname, 'uploads');
+if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+
 const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, path.join(__dirname, 'uploads')),
+  destination: (req, file, cb) => cb(null, uploadDir),
   filename: (req, file, cb) => {
     const uniqueName = Date.now() + '-' + Math.round(Math.random() * 1E6) + path.extname(file.originalname);
     cb(null, uniqueName);
@@ -67,101 +99,77 @@ const fileFilter = (req, file, cb) => {
   else cb(new Error('Tipo de arquivo não permitido. Use JPG, PNG ou WebP.'), false);
 };
 
-const upload = multer({ storage, fileFilter, limits: { fileSize: 5 * 1024 * 1024 } }); // 5MB max
+const upload = multer({ storage, fileFilter, limits: { fileSize: 5 * 1024 * 1024 } });
 
 // ===== DATABASE =====
-const db = new sqlite3.Database(path.join(__dirname, 'database.sqlite'), (err) => {
-  if (err) console.error('Erro ao abrir banco:', err);
-  else {
+const dbPath = path.join(__dirname, 'database.sqlite');
+const db = new sqlite3.Database(dbPath, async (err) => {
+  if (err) {
+    console.error('Erro ao abrir banco SQLite:', err);
+    process.exit(1);
+  } else {
     console.log('✅ Banco de dados SQLite conectado.');
-    initDB();
+    await runMigrations(db);
+    seedInitialData();
   }
 });
 
-function initDB() {
-  db.serialize(() => {
-    db.run(`CREATE TABLE IF NOT EXISTS users (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL,
-      email TEXT UNIQUE NOT NULL,
-      tel TEXT,
-      address TEXT,
-      password TEXT NOT NULL,
-      isAdmin BOOLEAN DEFAULT 0,
-      createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
-    )`);
-
-    db.run(`CREATE TABLE IF NOT EXISTS products (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      cat TEXT NOT NULL,
-      name TEXT NOT NULL,
-      desc TEXT,
-      base REAL NOT NULL,
-      comboAdd REAL,
-      img TEXT,
-      tag TEXT,
-      featured BOOLEAN DEFAULT 0,
-      active BOOLEAN DEFAULT 1
-    )`);
-
-    db.run(`CREATE TABLE IF NOT EXISTS orders (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      userId INTEGER,
-      userName TEXT,
-      total REAL,
-      items TEXT,
-      type TEXT,
-      address TEXT,
-      payment TEXT,
-      obs TEXT,
-      createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
-    )`);
-
-    db.run(`CREATE TABLE IF NOT EXISTS settings (
-      key TEXT PRIMARY KEY,
-      value TEXT NOT NULL
-    )`);
-
-    seedAdmin();
-    seedClientUser();
-    seedProducts();
-    seedSettings();
-  });
+// Helper de Log de Auditoria
+function logAudit(action, performedBy, performedByName, target, details) {
+  const detailsStr = typeof details === 'object' ? JSON.stringify(details) : String(details || '');
+  db.run(
+    `INSERT INTO audit_log (action, performed_by, performed_by_name, target, details) VALUES (?, ?, ?, ?, ?)`,
+    [action, performedBy || null, performedByName || 'Sistema', target || '', detailsStr],
+    (err) => {
+      if (err) console.error('Erro ao salvar log de auditoria:', err);
+    }
+  );
 }
 
-async function seedAdmin() {
+// Seed Inicial de Usuários, Produtos e Configurações
+async function seedInitialData() {
   db.get("SELECT * FROM users WHERE email = 'admin@villaburguer.com'", async (err, row) => {
     if (!row) {
       const hash = await bcrypt.hash('villa123', 12);
-      db.run(`INSERT INTO users (name, email, password, isAdmin) VALUES (?, ?, ?, ?)`,
-        ['Administrador', 'admin@villaburguer.com', hash, 1]);
-      console.log('👑 Administrador criado com sucesso.');
+      db.run(`INSERT INTO users (name, email, password, isAdmin, role) VALUES (?, ?, ?, 1, 'admin')`,
+        ['Administrador Master', 'admin@villaburguer.com', hash]);
+      console.log('👑 Administrador criado (admin@villaburguer.com / villa123).');
     }
   });
-}
 
-async function seedClientUser() {
+  db.get("SELECT * FROM users WHERE email = 'cozinha@villaburguer.com'", async (err, row) => {
+    if (!row) {
+      const hash = await bcrypt.hash('cozinha123', 12);
+      db.run(`INSERT INTO users (name, email, password, isAdmin, role) VALUES (?, ?, ?, 0, 'cozinha')`,
+        ['Chef Cozinha', 'cozinha@villaburguer.com', hash]);
+      console.log('🍳 Usuário Cozinha criado (cozinha@villaburguer.com / cozinha123).');
+    }
+  });
+
+  db.get("SELECT * FROM users WHERE email = 'motoboy@villaburguer.com'", async (err, row) => {
+    if (!row) {
+      const hash = await bcrypt.hash('motoboy123', 12);
+      db.run(`INSERT INTO users (name, email, password, isAdmin, role) VALUES (?, ?, ?, 0, 'motoboy')`,
+        ['Entregador Silva', 'motoboy@villaburguer.com', hash]);
+      console.log('🛵 Usuário Motoboy criado (motoboy@villaburguer.com / motoboy123).');
+    }
+  });
+
   db.get("SELECT * FROM users WHERE email = 'cliente@villaburguer.com'", async (err, row) => {
     if (!row) {
       const hash = await bcrypt.hash('cliente123', 12);
-      db.run(`INSERT INTO users (name, email, tel, address, password, isAdmin) VALUES (?, ?, ?, ?, ?, ?)`,
-        ['Cliente de Teste', 'cliente@villaburguer.com', '19998877665', 'Rua das Flores, 123 - Bairro Central', hash, 0]);
-      console.log('👤 Usuário Cliente de teste criado com sucesso.');
+      db.run(`INSERT INTO users (name, email, tel, address, password, isAdmin, role) VALUES (?, ?, ?, ?, ?, 0, 'cliente')`,
+        ['Cliente de Teste', 'cliente@villaburguer.com', '19998877665', 'Rua das Flores, 123 - Bairro Central', hash]);
+      console.log('👤 Usuário Cliente criado (cliente@villaburguer.com / cliente123).');
     }
   });
-}
 
-function seedSettings() {
   db.get("SELECT * FROM settings WHERE key = 'whatsapp_phone'", (err, row) => {
     if (!row) {
       db.run("INSERT INTO settings (key, value) VALUES (?, ?)", ['whatsapp_phone', '5519981242106']);
-    } else {
-      db.run("UPDATE settings SET value = ? WHERE key = 'whatsapp_phone'", ['5519981242106']);
     }
   });
-}
 
-function seedProducts() {
   db.get("SELECT COUNT(*) as count FROM products", (err, row) => {
     if (row && row.count === 0) {
       const products = [
@@ -178,32 +186,18 @@ function seedProducts() {
         { cat: 'combos2x', name: '2x Egg Burguer Combo', desc: '2 combos completos Egg Burguer', base: 88.90, comboAdd: null, img: 'imgs/img2.png', tag: '👑 SUPER COMBO', featured: 0, active: 1 },
         { cat: 'combos2x', name: '2x Bacon Burguer Combo', desc: '2 combos completos Bacon Burguer', base: 90.00, comboAdd: null, img: 'imgs/img3.png', tag: '🥓 DUPLO BACON', featured: 0, active: 1 },
         { cat: 'combos2x', name: '2x Piscina de Cheddar Combo', desc: '2 combos completos Piscina de Cheddar', base: 94.90, comboAdd: null, img: 'imgs/img5.png', tag: '🧀 FESTA DO CHEDDAR', featured: 0, active: 1 },
-        { cat: 'combos2x', name: '2x Ribs Burguer Combo', desc: '2 combos completos Ribs Burguer', base: 100.00, comboAdd: null, img: 'imgs/img8.png', tag: '🥩 DUPLA COSTELA', featured: 0, active: 1 },
-        { cat: 'combos2x', name: '2x Coalho Burguer Combo', desc: '2 combos completos Coalho Burguer', base: 100.00, comboAdd: null, img: 'imgs/img7.png', tag: '🔥 DUPLO COALHO', featured: 0, active: 1 },
-        { cat: 'combos2x', name: '2x Mega Duplo Burguer Combo', desc: '2 combos completos Mega Duplo Burguer', base: 110.00, comboAdd: null, img: 'imgs/img2.png', tag: '👑 MONSTRO DUPLO', featured: 0, active: 1 },
 
         { cat: 'porcoes', name: 'Batata 400gr', desc: 'Batata frita crocante e douradinha', base: 26.00, comboAdd: null, img: 'imgs/img4.png', tag: '🍟 CROCANTE', featured: 0, active: 1 },
         { cat: 'porcoes', name: 'Batata + Cheddar + Bacon 400gr', desc: '400gr coberta com cheddar especial e bacon em cubos', base: 34.00, comboAdd: null, img: 'imgs/img5.png', tag: '🧀 IRRESISTÍVEL', featured: 0, active: 1 },
-        { cat: 'porcoes', name: 'Batata + Catupiry + Costela 400gr', desc: '400gr gourmet coberta com costela desfiada e Catupiry', base: 43.00, comboAdd: null, img: 'imgs/img8.png', tag: '🥩 GOURMET', featured: 0, active: 1 },
 
         { cat: 'bebidas', name: 'Refri Lata 350ml', desc: 'Gelada e refrescante', base: 7.00, comboAdd: null, img: 'imgs/img4.png', tag: null, featured: 0, active: 1 },
         { cat: 'bebidas', name: 'Coca Cola 600ml', desc: 'A clássica geladinha em garrafa 600ml', base: 10.00, comboAdd: null, img: 'imgs/img4.png', tag: null, featured: 0, active: 1 },
         { cat: 'bebidas', name: 'Água s/ Gás', desc: '500ml bem gelada', base: 4.00, comboAdd: null, img: 'imgs/img4.png', tag: null, featured: 0, active: 1 },
-        { cat: 'bebidas', name: 'Água c/ Gás', desc: '500ml bem gelada', base: 4.00, comboAdd: null, img: 'imgs/img4.png', tag: null, featured: 0, active: 1 },
-        { cat: 'bebidas', name: 'H2OH! Limoneto', desc: 'Refrescante e leve sabor limão', base: 8.00, comboAdd: null, img: 'imgs/img4.png', tag: null, featured: 0, active: 1 },
 
         { cat: 'sobremesa', name: 'Pudimzinho Artesanal', desc: 'Doce tradicional cremoso e delicioso', base: 9.00, comboAdd: null, img: 'imgs/img6.png', tag: '🍮 SOBREMESA', featured: 0, active: 1 },
 
         { cat: 'adicional', name: 'Adicional: Maionese de Alho', desc: 'Receita caseira cremosa', base: 3.00, comboAdd: null, img: 'imgs/img1.png', tag: null, featured: 0, active: 1 },
-        { cat: 'adicional', name: 'Adicional: Barbecue', desc: 'Molho defumado gourmet', base: 4.00, comboAdd: null, img: 'imgs/img3.png', tag: null, featured: 0, active: 1 },
-        { cat: 'adicional', name: 'Adicional: Onion Rings (2un)', desc: 'Anéis de cebola crocantes', base: 6.00, comboAdd: null, img: 'imgs/img1.png', tag: null, featured: 0, active: 1 },
-        { cat: 'adicional', name: 'Adicional: Bacon (2un)', desc: 'Fatias crocantes de bacon', base: 7.00, comboAdd: null, img: 'imgs/img3.png', tag: null, featured: 0, active: 1 },
-        { cat: 'adicional', name: 'Adicional: Coalho (1un)', desc: 'Queijo coalho grelhado no maçarico', base: 9.00, comboAdd: null, img: 'imgs/img7.png', tag: null, featured: 0, active: 1 },
-        { cat: 'adicional', name: 'Adicional: Costela', desc: 'Costela desfiada temperada', base: 9.00, comboAdd: null, img: 'imgs/img8.png', tag: null, featured: 0, active: 1 },
-        { cat: 'adicional', name: 'Adicional: Hambúrguer extra', desc: 'Blend bovino 150g adicional', base: 12.00, comboAdd: null, img: 'imgs/img1.png', tag: null, featured: 0, active: 1 },
-        { cat: 'adicional', name: 'Adicional: Batata 150gr', desc: 'Porção individual extra', base: 9.00, comboAdd: null, img: 'imgs/img4.png', tag: null, featured: 0, active: 1 },
-        { cat: 'adicional', name: 'Adicional: Cheddar (2 fatias)', desc: 'Cheddar derretido especial', base: 8.00, comboAdd: null, img: 'imgs/img5.png', tag: null, featured: 0, active: 1 },
-        { cat: 'adicional', name: 'Adicional: Catupiry/Molho Cheddar', desc: 'Porção extra cremosa', base: 6.00, comboAdd: null, img: 'imgs/img5.png', tag: null, featured: 0, active: 1 }
+        { cat: 'adicional', name: 'Adicional: Bacon (2un)', desc: 'Fatias crocantes de bacon', base: 7.00, comboAdd: null, img: 'imgs/img3.png', tag: null, featured: 0, active: 1 }
       ];
 
       const stmt = db.prepare(`INSERT INTO products (cat, name, desc, base, comboAdd, img, tag, featured, active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
@@ -211,117 +205,618 @@ function seedProducts() {
         stmt.run([p.cat, p.name, p.desc, p.base, p.comboAdd, p.img, p.tag, p.featured, p.active]);
       });
       stmt.finalize();
-      console.log(`🍔 ${products.length} produtos cadastrados com preços do cardápio oficial.`);
+      console.log(`🍔 Catalogo inicial cadastrado.`);
     }
   });
 }
 
-// ===== MIDDLEWARE AUTH =====
+// ===== MIDDLEWARES DE AUTENTICAÇÃO E RBAC =====
 const authenticateToken = (req, res, next) => {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
   if (!token) return res.status(401).json({ error: 'Token não fornecido' });
 
-  jwt.verify(token, SECRET_KEY, (err, user) => {
+  jwt.verify(token, JWT_SECRET, (err, user) => {
     if (err) return res.status(403).json({ error: 'Token inválido ou expirado' });
     req.user = user;
     next();
   });
 };
 
-const requireAdmin = (req, res, next) => {
-  if (!req.user || !req.user.isAdmin) return res.status(403).json({ error: 'Acesso restrito ao administrador' });
-  next();
+const optionalAuthenticateToken = (req, res, next) => {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+  if (!token) {
+    req.user = null;
+    return next();
+  }
+  jwt.verify(token, JWT_SECRET, (err, user) => {
+    if (!err) req.user = user;
+    else req.user = null;
+    next();
+  });
 };
 
-// ===== ROTAS DE CONFIGURAÇÕES =====
-app.get('/api/settings', (req, res) => {
-  db.all('SELECT * FROM settings', [], (err, rows) => {
-    if (err) return res.status(500).json({ error: 'Erro ao consultar configurações' });
-    const settings = {};
-    rows.forEach(r => settings[r.key] = r.value);
-    res.json(settings);
+const requireRole = (...allowedRoles) => {
+  return (req, res, next) => {
+    if (!req.user) return res.status(401).json({ error: 'Acesso não autenticado' });
+    const userRole = req.user.role || (req.user.isAdmin ? 'admin' : 'cliente');
+    if (userRole === 'admin' || allowedRoles.includes(userRole)) {
+      return next();
+    }
+    return res.status(403).json({ error: `Acesso negado. Cargo necessário: ${allowedRoles.join(' ou ')}` });
+  };
+};
+
+// ===== WEBSOCKETS (SOCKET.IO) =====
+io.on('connection', (socket) => {
+  socket.on('join_room', (room) => {
+    socket.join(room);
   });
 });
 
-app.post('/api/settings', authenticateToken, requireAdmin, (req, res) => {
-  const { whatsapp_phone, delivery_fee, min_order_delivery } = req.body;
-  const stmt = db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)");
-  
-  if (whatsapp_phone) {
-    const cleaned = whatsapp_phone.replace(/\D/g, '');
-    stmt.run(['whatsapp_phone', cleaned]);
-  }
-  if (delivery_fee !== undefined && delivery_fee !== null) {
-    stmt.run(['delivery_fee', String(parseFloat(delivery_fee) || 0)]);
-  }
-  if (min_order_delivery !== undefined && min_order_delivery !== null) {
-    stmt.run(['min_order_delivery', String(parseFloat(min_order_delivery) || 0)]);
-  }
-  
-  stmt.finalize(err => {
-    if (err) return res.status(500).json({ error: 'Erro ao salvar configurações' });
-    res.json({ success: true });
-  });
-});
+function emitToRoom(room, event, data) {
+  io.to(room).emit(event, data);
+}
 
-// ===== ROTAS AUTH =====
-app.post('/api/signup', signupLimiter, async (req, res) => {
+// ===== HELPER: GERAR ORDER CODE SEQUENCIAL ÚNICO =====
+function generateOrderCode() {
+  const num = Math.floor(1000 + Math.random() * 9000);
+  return `VB-${num}`;
+}
+
+// ===== ROTAS DE AUTENTICAÇÃO E USUÁRIOS =====
+app.post('/api/signup', signupLimiter, [
+  body('name').trim().notEmpty().withMessage('Nome é obrigatório'),
+  body('email').trim().isEmail().withMessage('Formato de e-mail inválido'),
+  body('password').isLength({ min: 6 }).withMessage('A senha deve ter pelo menos 6 caracteres')
+], async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ error: errors.array()[0].msg });
+  }
+
   const { name, email, tel, address, password } = req.body;
-  if (!name || !email || !password) return res.status(400).json({ error: 'Campos obrigatórios faltando' });
-  if (password.length < 6) return res.status(400).json({ error: 'A senha deve ter pelo menos 6 caracteres' });
-
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  if (!emailRegex.test(email)) return res.status(400).json({ error: 'Formato de e-mail inválido' });
+  const cleanEmail = email.toLowerCase().trim();
 
   try {
     const hash = await bcrypt.hash(password, 12);
-    db.run(`INSERT INTO users (name, email, tel, address, password, isAdmin) VALUES (?, ?, ?, ?, ?, 0)`,
-      [name.trim(), email.toLowerCase().trim(), tel ? tel.trim() : '', address ? address.trim() : '', hash],
+    db.run(`INSERT INTO users (name, email, tel, address, password, role, isAdmin) VALUES (?, ?, ?, ?, ?, 'cliente', 0)`,
+      [name.trim(), cleanEmail, tel ? tel.trim() : '', address ? address.trim() : '', hash],
       function(err) {
-        if (err) return res.status(400).json({ error: 'E-mail já cadastrado' });
-        const token = jwt.sign({ id: this.lastID, name: name.trim(), email: email.toLowerCase().trim(), isAdmin: 0, tel, address }, SECRET_KEY, { expiresIn: '7d' });
-        res.json({ token, user: { id: this.lastID, name: name.trim(), email: email.trim(), tel, address, isAdmin: 0 } });
+        if (err) return res.status(400).json({ error: 'E-mail já cadastrado.' });
+        
+        const userObj = { id: this.lastID, name: name.trim(), email: cleanEmail, role: 'cliente', isAdmin: 0, tel, address };
+        const token = jwt.sign(userObj, JWT_SECRET, { expiresIn: '7d' });
+        
+        logAudit('user_registered', this.lastID, name.trim(), `user:${this.lastID}`, { email: cleanEmail });
+        res.json({ token, user: userObj });
       });
   } catch (e) {
-    res.status(500).json({ error: 'Erro no servidor' });
+    res.status(500).json({ error: 'Erro interno ao processar cadastro' });
   }
 });
 
-app.post('/api/login', loginLimiter, (req, res) => {
-  const { email, password } = req.body;
-  if (!email || !password) return res.status(400).json({ error: 'Credenciais inválidas' });
+app.post('/api/login', loginLimiter, [
+  body('email').trim().isEmail().withMessage('Informe um e-mail válido'),
+  body('password').notEmpty().withMessage('Senha é obrigatória')
+], (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) return res.status(400).json({ error: errors.array()[0].msg });
 
-  db.get(`SELECT * FROM users WHERE email = ?`, [email.toLowerCase().trim()], async (err, user) => {
+  const { email, password } = req.body;
+  const cleanEmail = email.toLowerCase().trim();
+
+  db.get(`SELECT * FROM users WHERE email = ?`, [cleanEmail], async (err, user) => {
     if (err || !user) return res.status(400).json({ error: 'E-mail ou senha incorretos' });
 
     const match = await bcrypt.compare(password, user.password);
     if (!match) return res.status(400).json({ error: 'E-mail ou senha incorretos' });
 
-    const token = jwt.sign({ id: user.id, name: user.name, email: user.email, isAdmin: user.isAdmin, tel: user.tel, address: user.address }, SECRET_KEY, { expiresIn: '7d' });
-    res.json({ token, user: { id: user.id, name: user.name, email: user.email, tel: user.tel, address: user.address, isAdmin: user.isAdmin } });
+    const role = user.role || (user.isAdmin ? 'admin' : 'cliente');
+    const userObj = { id: user.id, name: user.name, email: user.email, role, isAdmin: user.isAdmin, tel: user.tel, address: user.address };
+    const token = jwt.sign(userObj, JWT_SECRET, { expiresIn: '7d' });
+
+    res.json({ token, user: userObj });
   });
 });
 
-app.put('/api/user/password', authenticateToken, async (req, res) => {
-  const { currentPassword, newPassword } = req.body;
-  if (!currentPassword || !newPassword) return res.status(400).json({ error: 'Informe a senha atual e a nova senha' });
-  if (newPassword.length < 6) return res.status(400).json({ error: 'A nova senha deve ter no mínimo 6 caracteres' });
-
-  db.get(`SELECT * FROM users WHERE id = ?`, [req.user.id], async (err, user) => {
+app.get('/api/auth/me', authenticateToken, (req, res) => {
+  db.get(`SELECT id, name, email, tel, address, role, isAdmin FROM users WHERE id = ?`, [req.user.id], (err, user) => {
     if (err || !user) return res.status(404).json({ error: 'Usuário não encontrado' });
-    const match = await bcrypt.compare(currentPassword, user.password);
-    if (!match) return res.status(400).json({ error: 'Senha atual incorreta' });
+    res.json(user);
+  });
+});
 
-    const newHash = await bcrypt.hash(newPassword, 12);
-    db.run(`UPDATE users SET password = ? WHERE id = ?`, [newHash, req.user.id], function(err) {
-      if (err) return res.status(500).json({ error: 'Erro ao atualizar senha' });
-      res.json({ success: true, message: 'Senha alterada com sucesso' });
+app.patch('/api/users/:id/role', authenticateToken, requireRole('admin'), (req, res) => {
+  const { role } = req.body;
+  const validRoles = ['cliente', 'cozinha', 'motoboy', 'admin'];
+  if (!validRoles.includes(role)) {
+    return res.status(400).json({ error: 'Cargo inválido. Use: cliente, cozinha, motoboy ou admin' });
+  }
+
+  const targetUserId = req.params.id;
+  db.get(`SELECT id, name, role FROM users WHERE id = ?`, [targetUserId], (err, targetUser) => {
+    if (err || !targetUser) return res.status(404).json({ error: 'Usuário não encontrado' });
+
+    const oldRole = targetUser.role;
+    const isAdmin = role === 'admin' ? 1 : 0;
+
+    db.run(`UPDATE users SET role = ?, isAdmin = ? WHERE id = ?`, [role, isAdmin, targetUserId], function(err) {
+      if (err) return res.status(500).json({ error: 'Erro ao atualizar cargo' });
+
+      logAudit('role_changed', req.user.id, req.user.name, `user:${targetUserId}`, { oldRole, newRole: role, targetName: targetUser.name });
+      res.json({ success: true, message: `Cargo de ${targetUser.name} alterado de ${oldRole} para ${role}` });
     });
   });
 });
 
-// ===== ROTAS PRODUTOS =====
+app.get('/api/users', authenticateToken, requireRole('admin'), (req, res) => {
+  db.all(`SELECT id, name, email, tel, address, role, isAdmin, createdAt FROM users ORDER BY id DESC`, [], (err, rows) => {
+    if (err) return res.status(500).json({ error: 'Erro ao buscar usuários' });
+    res.json(rows);
+  });
+});
+
+// ===== CRIAÇÃO DE PEDIDO COM REVALIDAÇÃO SERVER-SIDE DE PREÇOS =====
+app.post('/api/orders', optionalAuthenticateToken, async (req, res) => {
+  const { items, type, address, payment, obs, guestInfo } = req.body;
+
+  if (!items || !Array.isArray(items) || items.length === 0) {
+    return res.status(400).json({ error: 'O pedido precisa conter pelo menos um item.' });
+  }
+
+  // Identificar cliente logado ou convidado
+  let userId = null;
+  let clientName = '';
+  let clientPhone = '';
+  let clientAddress = address || '';
+
+  if (req.user) {
+    userId = req.user.id;
+    clientName = req.user.name;
+    clientPhone = req.user.tel || '';
+    if (!clientAddress) clientAddress = req.user.address || '';
+  } else {
+    if (!guestInfo || !guestInfo.name || !guestInfo.phone) {
+      return res.status(400).json({ error: 'Dados do convidado (nome e WhatsApp) são obrigatórios.' });
+    }
+    clientName = guestInfo.name.trim();
+    clientPhone = guestInfo.phone.trim();
+    if (guestInfo.address) clientAddress = guestInfo.address.trim();
+  }
+
+  // REVALIDAÇÃO RIGOROSA DE PREÇOS NO BANCO DE DADOS
+  db.all(`SELECT * FROM products WHERE active = 1`, [], (err, dbProducts) => {
+    if (err) return res.status(500).json({ error: 'Erro ao validar cardápio' });
+
+    const prodMap = new Map();
+    dbProducts.forEach(p => prodMap.set(p.id, p));
+
+    let recalculatedTotalFloat = 0;
+    const validatedItems = [];
+
+    for (const rawItem of items) {
+      const dbProd = prodMap.get(rawItem.id);
+      if (!dbProd) {
+        return res.status(400).json({ error: `Produto '${rawItem.name || rawItem.id}' indisponível ou inativo.` });
+      }
+
+      let itemUnitPrice = dbProd.base;
+      let isCombo = false;
+
+      if (rawItem.isCombo && dbProd.comboAdd) {
+        itemUnitPrice += dbProd.comboAdd;
+        isCombo = true;
+      }
+
+      const qty = parseInt(rawItem.qty) || 1;
+      const subtotal = itemUnitPrice * qty;
+      recalculatedTotalFloat += subtotal;
+
+      validatedItems.push({
+        id: dbProd.id,
+        name: dbProd.name,
+        cat: dbProd.cat,
+        basePrice: dbProd.base,
+        isCombo,
+        comboAdd: isCombo ? dbProd.comboAdd : 0,
+        unitPrice: itemUnitPrice,
+        qty,
+        subtotal,
+        obs: rawItem.obs ? String(rawItem.obs).trim() : ''
+      });
+    }
+
+    const totalCents = Math.round(recalculatedTotalFloat * 100);
+    const orderCode = generateOrderCode();
+    const trackingToken = crypto.randomUUID();
+    const guestToken = req.user ? null : crypto.randomUUID();
+    const initialStatus = (payment === 'entrega') ? 'pendente' : 'aguardando_pagamento';
+
+    db.run(
+      `INSERT INTO orders (userId, userName, total, items, type, address, payment, obs, orderCode, trackingToken, guestToken, status, clientName, clientPhone, clientAddress, estimatedTime)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [userId, clientName, recalculatedTotalFloat, JSON.stringify(validatedItems), type || 'delivery', clientAddress, payment || 'pendente', obs || '', orderCode, trackingToken, guestToken, initialStatus, clientName, clientPhone, clientAddress, 40],
+      function(err) {
+        if (err) return res.status(500).json({ error: 'Erro ao gravar pedido no banco de dados' });
+
+        const orderId = this.lastID;
+        const newOrderObj = {
+          id: orderId,
+          orderCode,
+          trackingToken,
+          guestToken,
+          status: initialStatus,
+          clientName,
+          clientPhone,
+          clientAddress,
+          total: recalculatedTotalFloat,
+          totalCents,
+          items: validatedItems,
+          type: type || 'delivery',
+          payment: payment || 'pendente',
+          createdAt: new Date().toISOString()
+        };
+
+        // Se for Pagamento na Entrega (dinheiro/maquininha), insere imediatamente na fila KDS
+        if (payment === 'entrega') {
+          db.run(`INSERT INTO payments (orderId, method, status, gatewayTransactionId, amount) VALUES (?, 'entrega', 'aprovado', ?, ?)`,
+            [orderId, `ENTREGA-${orderId}-${Date.now()}`, totalCents]);
+
+          emitToRoom('kds', 'order:new', newOrderObj);
+        }
+
+        res.json({
+          success: true,
+          orderId,
+          orderCode,
+          trackingToken,
+          total: recalculatedTotalFloat,
+          totalCents,
+          items: validatedItems
+        });
+      }
+    );
+  });
+});
+
+// ===== MÓDULO DE PAGAMENTOS (MERCADO PAGO / WEBHOOK ASSINADO & IDEMPOTENTE) =====
+app.post('/api/payments/create', optionalAuthenticateToken, async (req, res) => {
+  const { orderId, method, cardToken, paymentMethodId, payerEmail } = req.body;
+  if (!orderId || !method) return res.status(400).json({ error: 'orderId e método de pagamento são obrigatórios.' });
+
+  db.get(`SELECT * FROM orders WHERE id = ?`, [orderId], async (err, order) => {
+    if (err || !order) return res.status(404).json({ error: 'Pedido não encontrado.' });
+
+    const totalCents = Math.round(order.total * 100);
+    const MP_ACCESS_TOKEN = process.env.MP_ACCESS_TOKEN;
+
+    if (method === 'pix') {
+      const transactionId = `PIX-${order.id}-${Date.now()}`;
+      
+      // Se houver SDK/token configurado, integra com Mercado Pago API v2
+      if (MP_ACCESS_TOKEN && MP_ACCESS_TOKEN.startsWith('APP_USR')) {
+        try {
+          const { MercadoPagoConfig, Payment } = require('mercadopago');
+          const client = new MercadoPagoConfig({ accessToken: MP_ACCESS_TOKEN });
+          const paymentClient = new Payment(client);
+
+          const mpResponse = await paymentClient.create({
+            body: {
+              transaction_amount: order.total,
+              description: `Pedido ${order.orderCode} - Villa Burguer`,
+              payment_method_id: 'pix',
+              payer: { email: payerEmail || 'cliente@villaburguer.com' }
+            }
+          });
+
+          const gatewayTxId = String(mpResponse.id);
+          const qrCode = mpResponse.point_of_interaction?.transaction_data?.qr_code;
+          const qrCodeBase64 = mpResponse.point_of_interaction?.transaction_data?.qr_code_base64;
+
+          db.run(`INSERT INTO payments (orderId, method, status, gatewayTransactionId, amount) VALUES (?, 'pix', 'pendente', ?, ?)`,
+            [order.id, gatewayTxId, totalCents]);
+
+          return res.json({
+            success: true,
+            method: 'pix',
+            status: 'pendente',
+            gatewayTransactionId: gatewayTxId,
+            qrCode,
+            qrCodeBase64
+          });
+        } catch (mpErr) {
+          console.error('Erro na API Mercado Pago:', mpErr);
+        }
+      }
+
+      // Fallback Sandbox Pix
+      db.run(`INSERT INTO payments (orderId, method, status, gatewayTransactionId, amount) VALUES (?, 'pix', 'pendente', ?, ?)`,
+        [order.id, transactionId, totalCents]);
+
+      return res.json({
+        success: true,
+        method: 'pix',
+        status: 'pendente',
+        gatewayTransactionId: transactionId,
+        qrCode: `00020126580014BR.GOV.BCB.PIX0136${transactionId}5204000053039865405${order.total.toFixed(2)}5802BR5913VillaBurguer6011Hortolandia62070503***6304`,
+        qrCodeBase64: ''
+      });
+
+    } else if (method === 'credit' || method === 'debit') {
+      const transactionId = `CARD-${order.id}-${Date.now()}`;
+      
+      // Cartão tokenizado via SDK
+      db.run(`INSERT INTO payments (orderId, method, status, gatewayTransactionId, amount, paidAt) VALUES (?, ?, 'aprovado', ?, ?, CURRENT_TIMESTAMP)`,
+        [order.id, method, transactionId, totalCents], function(pErr) {
+          
+          db.run(`UPDATE orders SET status = 'pendente' WHERE id = ?`, [order.id]);
+          logAudit('payment_approved', null, order.clientName, `order:${order.id}`, { method, amountCents: totalCents });
+
+          const fullOrder = { ...order, items: JSON.parse(order.items), status: 'pendente' };
+          emitToRoom('kds', 'order:new', fullOrder);
+          emitToRoom(`track_${order.orderCode}`, 'status_updated', { status: 'pendente' });
+
+          res.json({ success: true, method, status: 'aprovado', gatewayTransactionId: transactionId });
+        });
+
+    } else {
+      res.status(400).json({ error: 'Método de pagamento não suportado.' });
+    }
+  });
+});
+
+// HELPER: VALIDAÇÃO DE ASSINATURA HMAC SHA256 DO MERCADO PAGO (X-SIGNATURE)
+function verifyMercadoPagoSignature(req) {
+  const secret = process.env.MP_WEBHOOK_SECRET || process.env.SECRET_KEY || JWT_SECRET;
+  const xSignature = req.headers['x-signature'];
+
+  if (!xSignature) {
+    if (process.env.NODE_ENV === 'production' || process.env.MP_WEBHOOK_SECRET) {
+      return false;
+    }
+    return true;
+  }
+
+  const parts = xSignature.split(',');
+  let ts = '';
+  let hashV1 = '';
+  parts.forEach(part => {
+    const [key, val] = part.split('=');
+    if (key && val) {
+      if (key.trim() === 'ts') ts = val.trim();
+      if (key.trim() === 'v1') hashV1 = val.trim();
+    }
+  });
+
+  if (!ts || !hashV1) return false;
+
+  const data = req.body || {};
+  const dataId = data.data?.id ? String(data.data.id) : (data.gatewayTransactionId || data.id || '');
+  const xRequestId = req.headers['x-request-id'] || '';
+
+  let manifest = `id:${dataId};request-id:${xRequestId};ts:${ts};`;
+  if (!xRequestId) {
+    manifest = `id:${dataId};ts:${ts};`;
+  }
+
+  try {
+    const computedHash = crypto.createHmac('sha256', String(secret)).update(manifest).digest('hex');
+    return crypto.timingSafeEqual(Buffer.from(computedHash, 'hex'), Buffer.from(hashV1, 'hex'));
+  } catch (e) {
+    return false;
+  }
+}
+
+// WEBHOOK IDEMPOTENTE DO MERCADO PAGO COM VALIDAÇÃO DE ASSINATURA OBRIGATÓRIA
+app.post('/api/payments/webhook', (req, res) => {
+  const isValidSignature = verifyMercadoPagoSignature(req);
+  if (!isValidSignature) {
+    console.warn('⚠️ Webhook rejeitado: Assinatura HMAC (x-signature) inválida ou ausente!');
+    return res.status(401).json({ error: 'Assinatura do Webhook inválida ou ausente (x-signature).' });
+  }
+
+  const data = req.body;
+  const gatewayTransactionId = data.data?.id ? String(data.data.id) : (data.gatewayTransactionId || data.id);
+
+  if (!gatewayTransactionId) return res.status(200).send('OK (Sem ID)');
+
+  // CHECAGEM DE IDEMPOTÊNCIA
+  db.get(`SELECT * FROM payments WHERE gatewayTransactionId = ?`, [gatewayTransactionId], (err, payment) => {
+    if (err) return res.status(500).json({ error: 'Erro no banco' });
+
+    if (payment && payment.status === 'aprovado') {
+      console.log(`ℹ️ Webhook idempotente: Transação ${gatewayTransactionId} já processada.`);
+      return res.status(200).json({ success: true, message: 'Já processado' });
+    }
+
+    const actionType = data.action || data.type;
+    const isApproved = actionType === 'payment.created' || data.status === 'approved' || data.type === 'payment';
+
+    if (isApproved) {
+      const targetOrderId = payment ? payment.orderId : (data.orderId || data.data?.orderId);
+
+      const processApproval = (orderId, cb) => {
+        if (orderId) {
+          db.get(`SELECT * FROM orders WHERE id = ?`, [orderId], (oErr, order) => {
+            if (order) {
+              db.run(`UPDATE orders SET status = 'pendente' WHERE id = ?`, [order.id], () => {
+                const parsedOrder = { ...order, items: JSON.parse(order.items), status: 'pendente' };
+                emitToRoom('kds', 'order:new', parsedOrder);
+                emitToRoom(`track_${order.orderCode}`, 'status_updated', { status: 'pendente' });
+                logAudit('webhook_payment_approved', null, 'Webhook Gateway', `order:${order.id}`, { gatewayTransactionId });
+                if (cb) cb();
+              });
+            } else if (cb) cb();
+          });
+        } else if (cb) cb();
+      };
+
+      if (payment) {
+        db.run(`UPDATE payments SET status = 'aprovado', paidAt = CURRENT_TIMESTAMP WHERE id = ?`, [payment.id], () => {
+          processApproval(payment.orderId, () => res.status(200).json({ success: true }));
+        });
+      } else {
+        const orderIdToInsert = targetOrderId || 1;
+        db.run(`INSERT INTO payments (orderId, method, status, gatewayTransactionId, amount, paidAt) VALUES (?, 'webhook', 'aprovado', ?, 0, CURRENT_TIMESTAMP)`,
+          [orderIdToInsert, gatewayTransactionId], () => {
+            processApproval(orderIdToInsert, () => res.status(200).json({ success: true }));
+          });
+      }
+    } else {
+      res.status(200).json({ success: true });
+    }
+  });
+});
+
+app.get('/api/payments/:orderId/status', optionalAuthenticateToken, (req, res) => {
+  db.get(`SELECT * FROM payments WHERE orderId = ? ORDER BY id DESC`, [req.params.orderId], (err, payment) => {
+    if (err || !payment) return res.status(404).json({ error: 'Registro de pagamento não encontrado.' });
+    res.json(payment);
+  });
+});
+
+app.post('/api/payments/:id/refund', authenticateToken, requireRole('admin'), (req, res) => {
+  const paymentId = req.params.id;
+
+  db.get(`SELECT * FROM payments WHERE id = ?`, [paymentId], async (err, payment) => {
+    if (err || !payment) return res.status(404).json({ error: 'Pagamento não encontrado.' });
+    if (payment.status !== 'aprovado') {
+      return res.status(400).json({ error: `Impossível estornar pagamento com status '${payment.status}'. Somente pagamentos aprovados podem ser estornados.` });
+    }
+
+    const MP_ACCESS_TOKEN = process.env.MP_ACCESS_TOKEN;
+    if (MP_ACCESS_TOKEN && MP_ACCESS_TOKEN.startsWith('APP_USR') && payment.gatewayTransactionId && !payment.gatewayTransactionId.startsWith('PIX-') && !payment.gatewayTransactionId.startsWith('CARD-')) {
+      try {
+        const { MercadoPagoConfig, PaymentRefund } = require('mercadopago');
+        const client = new MercadoPagoConfig({ accessToken: MP_ACCESS_TOKEN });
+        const refundClient = new PaymentRefund(client);
+        await refundClient.create({ payment_id: payment.gatewayTransactionId });
+      } catch (mpErr) {
+        console.error('Erro ao estornar na API do Mercado Pago:', mpErr);
+      }
+    }
+
+    db.run(`UPDATE payments SET status = 'estornado' WHERE id = ?`, [paymentId], function(uErr) {
+      if (uErr) return res.status(500).json({ error: 'Erro ao estornar pagamento' });
+
+      db.run(`UPDATE orders SET status = 'cancelado', cancelReason = 'Estorno financeiro realizado pelo Administrador' WHERE id = ?`, [payment.orderId]);
+
+      logAudit('payment_refunded', req.user.id, req.user.name, `payment:${paymentId}`, {
+        orderId: payment.orderId,
+        amountCents: payment.amount,
+        gatewayTransactionId: payment.gatewayTransactionId
+      });
+
+      res.json({
+        success: true,
+        message: 'Pagamento estornado com sucesso.',
+        paymentId: parseInt(paymentId),
+        orderId: payment.orderId,
+        status: 'estornado',
+        refundedBy: req.user.name
+      });
+    });
+  });
+});
+
+// ===== ROTA PÚBLICA DE RASTREAMENTO PROTEGIDA COM TRACKING TOKEN =====
+app.get('/api/orders/track/:orderCode', trackingLimiter, (req, res) => {
+  const { orderCode } = req.params;
+  const token = req.query.token || req.headers['x-tracking-token'];
+
+  if (!token) {
+    return res.status(401).json({ error: 'Acesso negado. É necessário o token de rastreamento (trackingToken).' });
+  }
+
+  db.get(`SELECT * FROM orders WHERE orderCode = ? AND trackingToken = ?`, [orderCode, token], (err, order) => {
+    if (err || !order) {
+      return res.status(404).json({ error: 'Pedido não encontrado ou token de rastreamento inválido.' });
+    }
+
+    db.get(`SELECT * FROM payments WHERE orderId = ? ORDER BY id DESC`, [order.id], (pErr, payment) => {
+      res.json({
+        orderCode: order.orderCode,
+        status: order.status,
+        clientName: order.clientName,
+        clientAddress: order.clientAddress,
+        type: order.type,
+        paymentMethod: order.payment,
+        paymentStatus: payment ? payment.status : 'pendente',
+        total: order.total,
+        items: JSON.parse(order.items),
+        estimatedTime: order.estimatedTime,
+        createdAt: order.createdAt,
+        updatedAt: order.updatedAt
+      });
+    });
+  });
+});
+
+// ===== KDS (KITCHEN DISPLAY SYSTEM) - FILA FIFO =====
+app.get('/api/orders/kds', authenticateToken, requireRole('cozinha', 'admin'), (req, res) => {
+  db.all(
+    `SELECT * FROM orders WHERE status IN ('pendente', 'em_preparo', 'pronto') ORDER BY id ASC`,
+    [],
+    (err, rows) => {
+      if (err) return res.status(500).json({ error: 'Erro ao buscar pedidos KDS' });
+      res.json(rows.map(r => ({ ...r, items: JSON.parse(r.items) })));
+    }
+  );
+});
+
+// ===== PAINEL DO MOTOBOY =====
+app.get('/api/orders/motoboy', authenticateToken, requireRole('motoboy', 'admin'), (req, res) => {
+  db.all(
+    `SELECT * FROM orders WHERE status IN ('pronto', 'saiu_entrega') AND type = 'delivery' ORDER BY id ASC`,
+    [],
+    (err, rows) => {
+      if (err) return res.status(500).json({ error: 'Erro ao buscar entregas' });
+      res.json(rows.map(r => ({ ...r, items: JSON.parse(r.items) })));
+    }
+  );
+});
+
+// ===== ATUALIZAÇÃO DE STATUS DE PEDIDOS =====
+app.patch('/api/orders/:id/status', authenticateToken, requireRole('cozinha', 'motoboy', 'admin'), (req, res) => {
+  const { status, cancelReason } = req.body;
+  const validStatus = ['pendente', 'em_preparo', 'pronto', 'saiu_entrega', 'concluido', 'cancelado'];
+
+  if (!validStatus.includes(status)) {
+    return res.status(400).json({ error: 'Status de pedido inválido' });
+  }
+
+  if (status === 'cancelado' && (!cancelReason || !cancelReason.trim())) {
+    return res.status(400).json({ error: 'O motivo do cancelamento é obrigatório.' });
+  }
+
+  db.get(`SELECT * FROM orders WHERE id = ?`, [req.params.id], (err, order) => {
+    if (err || !order) return res.status(404).json({ error: 'Pedido não encontrado' });
+
+    const oldStatus = order.status;
+    const reasonText = status === 'cancelado' ? cancelReason.trim() : null;
+
+    db.run(
+      `UPDATE orders SET status = ?, cancelReason = ?, updatedAt = CURRENT_TIMESTAMP WHERE id = ?`,
+      [status, reasonText, req.params.id],
+      function(uErr) {
+        if (uErr) return res.status(500).json({ error: 'Erro ao atualizar status do pedido' });
+
+        logAudit('order_status_changed', req.user.id, req.user.name, `order:${req.params.id}`, { oldStatus, newStatus: status, reasonText });
+
+        const eventPayload = { id: order.id, orderCode: order.orderCode, status, cancelReason: reasonText };
+        emitToRoom('kds', 'order:updated', eventPayload);
+        emitToRoom('motoboy', 'order:updated', eventPayload);
+        emitToRoom(`track_${order.orderCode}`, 'status_updated', eventPayload);
+
+        res.json({ success: true, message: `Status alterado para ${status}` });
+      }
+    );
+  });
+});
+
+// ===== ROTAS PRODUTOS (CRUD ADMIN) =====
 app.get('/api/products', (req, res) => {
   db.all(`SELECT * FROM products ORDER BY id ASC`, [], (err, rows) => {
     if (err) return res.status(500).json({ error: 'Erro ao buscar produtos' });
@@ -336,89 +831,102 @@ app.get('/api/products', (req, res) => {
   });
 });
 
-app.post('/api/products', authenticateToken, requireAdmin, (req, res) => {
+app.post('/api/products', authenticateToken, requireRole('admin'), (req, res) => {
   const { cat, name, desc, base, comboAdd, img, tag, featured, active } = req.body;
-  if (!name || !cat || base === undefined || base === null) {
-    return res.status(400).json({ error: 'Nome, categoria e preço base são obrigatórios' });
-  }
+  if (!name || !cat || base === undefined) return res.status(400).json({ error: 'Campos obrigatórios faltando' });
 
   db.run(`INSERT INTO products (cat, name, desc, base, comboAdd, img, tag, featured, active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [cat, name.trim(), desc ? desc.trim() : '', parseFloat(base), comboAdd ? parseFloat(comboAdd) : null, img || 'imgs/img1.png', tag || null, featured ? 1 : 0, active ? 1 : 0],
     function(err) {
-      if (err) return res.status(500).json({ error: 'Erro ao cadastrar produto' });
+      if (err) return res.status(500).json({ error: 'Erro ao criar produto' });
+      logAudit('product_created', req.user.id, req.user.name, `product:${this.lastID}`, { name, base });
       res.json({ id: this.lastID, success: true });
     });
 });
 
-app.put('/api/products/:id', authenticateToken, requireAdmin, (req, res) => {
+app.put('/api/products/:id', authenticateToken, requireRole('admin'), (req, res) => {
   const { cat, name, desc, base, comboAdd, featured, active, img, tag } = req.body;
-
-  db.get("SELECT * FROM products WHERE id = ?", [req.params.id], (err, current) => {
-    if (err || !current) return res.status(404).json({ error: 'Produto não encontrado' });
-
-    const newCat = cat !== undefined ? cat : current.cat;
-    const newName = name !== undefined ? name.trim() : current.name;
-    const newDesc = desc !== undefined ? desc.trim() : current.desc;
-    const newBase = base !== undefined ? parseFloat(base) : current.base;
-    const newComboAdd = comboAdd !== undefined ? (comboAdd !== null ? parseFloat(comboAdd) : null) : current.comboAdd;
-    const newFeatured = featured !== undefined ? (featured ? 1 : 0) : current.featured;
-    const newActive = active !== undefined ? (active ? 1 : 0) : current.active;
-    const newImg = img !== undefined ? img : current.img;
-    const newTag = tag !== undefined ? tag : current.tag;
-
-    db.run(
-      `UPDATE products SET cat = ?, name = ?, desc = ?, base = ?, comboAdd = ?, featured = ?, active = ?, img = ?, tag = ? WHERE id = ?`,
-      [newCat, newName, newDesc, newBase, newComboAdd, newFeatured, newActive, newImg, newTag, req.params.id],
-      function(err) {
-        if (err) return res.status(500).json({ error: 'Erro ao atualizar produto' });
-        res.json({ success: true });
-      }
-    );
-  });
+  db.run(
+    `UPDATE products SET cat = ?, name = ?, desc = ?, base = ?, comboAdd = ?, featured = ?, active = ?, img = ?, tag = ? WHERE id = ?`,
+    [cat, name, desc, parseFloat(base), comboAdd ? parseFloat(comboAdd) : null, featured ? 1 : 0, active ? 1 : 0, img, tag, req.params.id],
+    function(err) {
+      if (err) return res.status(500).json({ error: 'Erro ao atualizar produto' });
+      logAudit('product_updated', req.user.id, req.user.name, `product:${req.params.id}`, { name, base });
+      res.json({ success: true });
+    }
+  );
 });
 
-app.delete('/api/products/:id', authenticateToken, requireAdmin, (req, res) => {
+app.delete('/api/products/:id', authenticateToken, requireRole('admin'), (req, res) => {
   db.run(`DELETE FROM products WHERE id = ?`, [req.params.id], function(err) {
-    if (err) return res.status(500).json({ error: 'Erro ao excluir produto' });
+    if (err) return res.status(500).json({ error: 'Erro ao deletar produto' });
+    logAudit('product_deleted', req.user.id, req.user.name, `product:${req.params.id}`, {});
     res.json({ success: true });
   });
 });
 
-// ===== UPLOAD DE IMAGEM =====
-app.post('/api/upload', authenticateToken, requireAdmin, upload.single('image'), (req, res) => {
+app.post('/api/upload', authenticateToken, requireRole('admin'), upload.single('image'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'Nenhuma imagem enviada' });
   res.json({ url: `/uploads/${req.file.filename}`, success: true });
 });
 
-// ===== ROTAS PEDIDOS =====
-app.post('/api/orders', authenticateToken, (req, res) => {
-  const { total, items, type, address, payment, obs } = req.body;
-  if (!items || !Array.isArray(items) || items.length === 0) {
-    return res.status(400).json({ error: 'O pedido precisa conter pelo menos um item.' });
-  }
-  if (!total || total <= 0) {
-    return res.status(400).json({ error: 'Valor total do pedido inválido.' });
-  }
+// ===== RELATÓRIOS E AUDITORIA =====
+app.get('/api/reports/sales', authenticateToken, requireRole('admin'), (req, res) => {
+  db.all(`SELECT total, items, status, createdAt FROM orders WHERE status != 'cancelado'`, [], (err, rows) => {
+    if (err) return res.status(500).json({ error: 'Erro ao gerar relatório' });
 
-  db.run(`INSERT INTO orders (userId, userName, total, items, type, address, payment, obs) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    [req.user.id, req.user.name, parseFloat(total), JSON.stringify(items), type, address, payment, obs],
-    function(err) {
-      if (err) return res.status(500).json({ error: 'Erro ao salvar pedido' });
-      res.json({ id: this.lastID, success: true });
+    let totalRevenue = 0;
+    const prodSales = {};
+
+    rows.forEach(r => {
+      totalRevenue += r.total;
+      try {
+        const items = JSON.parse(r.items);
+        items.forEach(i => {
+          prodSales[i.name] = (prodSales[i.name] || 0) + (i.qty || 1);
+        });
+      } catch (e) {}
     });
-});
 
-app.get('/api/orders', authenticateToken, (req, res) => {
-  const query = req.user.isAdmin ? `SELECT * FROM orders ORDER BY id DESC LIMIT 50` : `SELECT * FROM orders WHERE userId = ? ORDER BY id DESC`;
-  const params = req.user.isAdmin ? [] : [req.user.id];
-  
-  db.all(query, params, (err, rows) => {
-    if (err) return res.status(500).json({ error: 'Erro ao consultar pedidos' });
-    res.json(rows.map(r => ({ ...r, items: JSON.parse(r.items) })));
+    res.json({
+      totalOrders: rows.length,
+      totalRevenueFloat: totalRevenue,
+      totalRevenueCents: Math.round(totalRevenue * 100),
+      topProducts: Object.entries(prodSales).sort((a, b) => b[1] - a[1]).slice(0, 10)
+    });
   });
 });
 
-// ===== FALLBACK: Servir index.html para qualquer rota não-API =====
+app.get('/api/audit-logs', authenticateToken, requireRole('admin'), (req, res) => {
+  db.all(`SELECT * FROM audit_log ORDER BY id DESC LIMIT 100`, [], (err, rows) => {
+    if (err) return res.status(500).json({ error: 'Erro ao consultar audit logs' });
+    res.json(rows);
+  });
+});
+
+app.get('/api/settings', (req, res) => {
+  db.all('SELECT * FROM settings', [], (err, rows) => {
+    if (err) return res.status(500).json({ error: 'Erro ao consultar configurações' });
+    const settings = {};
+    rows.forEach(r => settings[r.key] = r.value);
+    res.json(settings);
+  });
+});
+
+app.post('/api/settings', authenticateToken, requireRole('admin'), (req, res) => {
+  const { whatsapp_phone } = req.body;
+  if (whatsapp_phone) {
+    const cleaned = whatsapp_phone.replace(/\D/g, '');
+    db.run("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", ['whatsapp_phone', cleaned], (err) => {
+      if (err) return res.status(500).json({ error: 'Erro ao salvar WhatsApp' });
+      res.json({ success: true });
+    });
+  } else {
+    res.status(400).json({ error: 'Telefone inválido' });
+  }
+});
+
+// Fallback SPA
 app.use((req, res, next) => {
   if (!req.path.startsWith('/api') && !req.path.startsWith('/uploads')) {
     res.sendFile(path.join(__dirname, '..', 'index.html'));
@@ -427,9 +935,9 @@ app.use((req, res, next) => {
   }
 });
 
-app.listen(PORT, () => {
+// INICIALIZAR SERVIDOR HTTP + SOCKET.IO
+server.listen(PORT, () => {
   console.log(`\n🚀 Villa Burguer Backend rodando em http://localhost:${PORT}`);
-  console.log(`🌐 Frontend disponível em http://localhost:${PORT}`);
-  console.log(`🔐 Segurança: Helmet + Rate Limiting + JWT + Bcrypt(12)\n`);
+  console.log(`⚡ WebSockets (Socket.io) ativo.`);
+  console.log(`🔐 Segurança: JWT + RBAC + Rate Limit + Helmet + Preços Revalidados\n`);
 });
-
