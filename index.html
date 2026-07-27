@@ -332,69 +332,66 @@
 </div>
 
 <!-- MODAL AUTH / USER -->
-<div id="user-modal" class="modal-backdrop">
-  <div class="modal-box">
-    <button class="modal-close" onclick="closeUserModal()">×</button>
-    <div id="auth-forms">
-      <h3 style="font-family:'Bebas Neue',sans-serif; font-size:2rem; color:var(--primary-orange); text-align:center;">LOGIN DE USUÁRIO</h3>
-      <div class="form-group" style="margin-top:1rem;">
-        <label>E-mail</label>
-        <input type="email" id="auth-email" class="form-control" placeholder="seu@email.com">
-      </div>
-      <div class="form-group">
-        <label>Senha</label>
-        <input type="password" id="auth-pass" class="form-control" placeholder="••••••••">
-      </div>
-      <button class="btn-primary" style="width:100%; margin-top:0.5rem;" onclick="handleLogin()">ENTRAR</button>
+<div id="user-modal" class="modal-overlay" onclick="handleModalBackdropClick(event, 'user-modal')">
+  <div class="modal-card" style="max-width: 480px;">
+    <div class="modal-header">
+      <h2 id="user-modal-title">🔑 ACESSO DO USUÁRIO</h2>
+      <button class="modal-close" onclick="closeUserModal()" aria-label="Fechar">×</button>
+    </div>
+    <div class="modal-body">
+      <div id="auth-forms"></div>
     </div>
   </div>
 </div>
 
 <!-- MODAL CARRINHO & CHECKOUT -->
-<div id="cart-modal" class="modal-backdrop">
-  <div class="modal-box">
-    <button class="modal-close" onclick="closeCartModal()">×</button>
-    <h3 style="font-family:'Bebas Neue',sans-serif; font-size:2.2rem; color:var(--primary-orange); margin-bottom:1rem;">SEU CARRINHO DE COMPRAS</h3>
-    
-    <div id="cart-modal-items" style="max-height:220px; overflow-y:auto; margin-bottom:1rem; border-bottom:1px solid #EEE;"></div>
-    <div style="display:flex; justify-content:space-between; font-weight:800; font-size:1.2rem; margin-bottom:1.5rem;">
-      <span>TOTAL:</span>
-      <span id="cart-modal-total" style="color:var(--primary-orange);">R$ 0,00</span>
+<div id="cart-modal" class="modal-overlay" onclick="handleModalBackdropClick(event, 'cart-modal')">
+  <div class="modal-card">
+    <div class="modal-header">
+      <h2>🛒 SEU CARRINHO & CHECKOUT</h2>
+      <button class="modal-close" onclick="closeCartModal()" aria-label="Fechar">×</button>
     </div>
-
-    <!-- DADOS DO CLIENTE CONVIDADO OU LOGADO -->
-    <div id="checkout-form">
-      <h4 style="margin-bottom:0.8rem;">Dados de Entrega</h4>
-      <div class="form-group">
-        <label>Seu Nome</label>
-        <input type="text" id="chk-name" class="form-control" placeholder="Nome Completo">
-      </div>
-      <div class="form-group">
-        <label>WhatsApp / Telefone</label>
-        <input type="text" id="chk-phone" class="form-control" placeholder="(19) 99999-8888">
-      </div>
-      <div class="form-group">
-        <label>Endereço Completo</label>
-        <input type="text" id="chk-address" class="form-control" placeholder="Rua, Número, Bairro">
+    <div class="modal-body">
+      <div id="cart-modal-items" style="max-height:220px; overflow-y:auto; margin-bottom:1rem; border-bottom:1px solid #EEE;"></div>
+      <div style="display:flex; justify-content:space-between; font-weight:800; font-size:1.2rem; margin-bottom:1.5rem;">
+        <span>TOTAL:</span>
+        <span id="cart-modal-total" style="color:var(--primary-orange);">R$ 0,00</span>
       </div>
 
-      <h4 style="margin:1rem 0 0.8rem;">Forma de Pagamento</h4>
-      <div class="form-group">
-        <select id="chk-payment" class="form-control" onchange="togglePaymentFields()">
-          <option value="pix">⚡ Pix (QR Code / Copia e Cola)</option>
-          <option value="credit">💳 Cartão de Crédito (Tokenizado MP)</option>
-          <option value="entrega">💵 Pagamento na Entrega (Dinheiro/Maquininha)</option>
-        </select>
-      </div>
+      <!-- DADOS DO CLIENTE CONVIDADO OU LOGADO -->
+      <div id="checkout-form">
+        <h4 style="margin-bottom:0.8rem; font-family:'Barlow Condensed',sans-serif; font-size:1.3rem; color:var(--text-main);">DADOS DE ENTREGA</h4>
+        <div class="form-group">
+          <label>Seu Nome *</label>
+          <input type="text" id="chk-name" class="form-control" placeholder="Nome Completo">
+        </div>
+        <div class="form-group">
+          <label>WhatsApp / Telefone *</label>
+          <input type="text" id="chk-phone" class="form-control" placeholder="(19) 99999-8888">
+        </div>
+        <div class="form-group">
+          <label>Endereço Completo</label>
+          <input type="text" id="chk-address" class="form-control" placeholder="Rua, Número, Bairro">
+        </div>
 
-      <!-- PAINEL PIX QR CODE -->
-      <div id="pay-pix-area" style="display:none; text-align:center; background:#FFF5EF; padding:1rem; border-radius:10px; margin-bottom:1rem; border:1px dashed var(--primary-orange);">
-        <p style="font-weight:800; color:var(--primary-orange);">Aguardando pagamento Pix...</p>
-        <textarea id="pix-copia-cola" class="form-control" style="font-size:0.75rem; height:60px; margin:0.6rem 0;" readonly></textarea>
-        <button class="btn-primary" style="padding:0.4rem 1rem; font-size:0.85rem;" onclick="copyPixCode()">📋 COPIAR CÓDIGO PIX</button>
-      </div>
+        <h4 style="margin:1.2rem 0 0.8rem; font-family:'Barlow Condensed',sans-serif; font-size:1.3rem; color:var(--text-main);">FORMA DE PAGAMENTO</h4>
+        <div class="form-group">
+          <select id="chk-payment" class="form-control" onchange="togglePaymentFields()">
+            <option value="pix">⚡ Pix (QR Code / Copia e Cola)</option>
+            <option value="credit">💳 Cartão de Crédito (Tokenizado MP)</option>
+            <option value="entrega">💵 Pagamento na Entrega (Dinheiro/Maquininha)</option>
+          </select>
+        </div>
 
-      <button class="btn-primary" style="width:100%; margin-top:0.5rem; font-size:1.1rem;" onclick="submitCheckout()">FINALIZAR PEDIDO</button>
+        <!-- PAINEL PIX QR CODE -->
+        <div id="pay-pix-area" style="display:none; text-align:center; background:#FFF5EF; padding:1rem; border-radius:10px; margin-bottom:1rem; border:1px dashed var(--primary-orange);">
+          <p style="font-weight:800; color:var(--primary-orange);">Aguardando pagamento Pix...</p>
+          <textarea id="pix-copia-cola" class="form-control" style="font-size:0.75rem; height:60px; margin:0.6rem 0;" readonly></textarea>
+          <button class="btn-primary" style="padding:0.4rem 1rem; font-size:0.85rem;" onclick="copyPixCode()">📋 COPIAR CÓDIGO PIX</button>
+        </div>
+
+        <button class="btn-primary" style="width:100%; margin-top:0.5rem; font-size:1.1rem;" onclick="submitCheckout()">FINALIZAR PEDIDO</button>
+      </div>
     </div>
   </div>
 </div>
@@ -754,10 +751,26 @@ function copyPixCode() {
 
 function togglePaymentFields() {}
 
-// AUTENTICAÇÃO
+// AUTENTICAÇÃO E MODAIS
+function handleModalBackdropClick(event, modalId) {
+  if (event.target && event.target.id === modalId) {
+    if (modalId === 'user-modal') closeUserModal();
+    if (modalId === 'cart-modal') closeCartModal();
+  }
+}
+
 async function handleLogin() {
-  const email = document.getElementById('auth-email').value;
-  const password = document.getElementById('auth-pass').value;
+  const emailInp = document.getElementById('auth-email');
+  const passInp = document.getElementById('auth-pass');
+  if (!emailInp || !passInp) return;
+
+  const email = emailInp.value.trim();
+  const password = passInp.value;
+
+  if (!email || !password) {
+    alert('Por favor, informe seu e-mail e sua senha.');
+    return;
+  }
 
   try {
     const res = await fetch(`${API_URL}/login`, {
@@ -772,7 +785,7 @@ async function handleLogin() {
       localStorage.setItem('villaburguer_user_v2', JSON.stringify(currentUser));
       updateNavRoles();
       closeUserModal();
-      showNotif(`Bem-vindo, ${currentUser.name}! 👋`);
+      showNotif(`Bem-vindo(a) de volta, ${currentUser.name}! 👋`);
     } else {
       alert(data.error || 'Erro ao realizar login.');
     }
@@ -781,20 +794,176 @@ async function handleLogin() {
   }
 }
 
-function updateNavRoles() {
-  const btn = document.getElementById('nav-user-btn');
-  if (currentUser) {
-    btn.innerHTML = `👤 ${currentUser.name} <span class="role-badge">${currentUser.role}</span>`;
-    
-    if (['cozinha', 'admin'].includes(currentUser.role)) document.getElementById('nav-item-kds').style.display = 'block';
-    if (['motoboy', 'admin'].includes(currentUser.role)) document.getElementById('nav-item-motoboy').style.display = 'block';
-    if (currentUser.role === 'admin') document.getElementById('nav-item-admin').style.display = 'block';
-  } else {
-    btn.innerHTML = `🔑 LOGIN`;
+async function handleSignup() {
+  const nameInp = document.getElementById('reg-name');
+  const emailInp = document.getElementById('reg-email');
+  const telInp = document.getElementById('reg-tel');
+  const addressInp = document.getElementById('reg-address');
+  const passInp = document.getElementById('reg-pass');
+
+  if (!nameInp || !emailInp || !passInp) return;
+
+  const name = nameInp.value.trim();
+  const email = emailInp.value.trim();
+  const tel = telInp ? telInp.value.trim() : '';
+  const address = addressInp ? addressInp.value.trim() : '';
+  const password = passInp.value;
+
+  if (!name || !email || !password) {
+    alert('Preencha os campos obrigatórios: Nome, E-mail e Senha.');
+    return;
+  }
+
+  if (password.length < 6) {
+    alert('A senha deve ter no mínimo 6 caracteres.');
+    return;
+  }
+
+  try {
+    const res = await fetch(`${API_URL}/signup`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, email, tel, address, password })
+    });
+    const data = await res.json();
+    if (res.ok) {
+      currentUser = data.user;
+      currentUser.token = data.token;
+      localStorage.setItem('villaburguer_user_v2', JSON.stringify(currentUser));
+      updateNavRoles();
+      closeUserModal();
+      showNotif(`Conta criada com sucesso! Bem-vindo(a), ${currentUser.name}! 🎉`);
+    } else {
+      alert(data.error || 'Erro ao criar conta.');
+    }
+  } catch (e) {
+    alert('Erro de conexão ao realizar cadastro.');
   }
 }
 
-function openUserModal() { document.getElementById('user-modal').classList.add('open'); }
+function handleLogout() {
+  currentUser = null;
+  localStorage.removeItem('villaburguer_user_v2');
+  updateNavRoles();
+  closeUserModal();
+  showNotif('Você saiu da sua conta.');
+  selectNav('home');
+}
+
+function updateNavRoles() {
+  const btn = document.getElementById('nav-user-btn');
+  const kdsNav = document.getElementById('nav-item-kds');
+  const motoboyNav = document.getElementById('nav-item-motoboy');
+  const adminNav = document.getElementById('nav-item-admin');
+
+  if (currentUser) {
+    btn.innerHTML = `👤 ${escapeHTML(currentUser.name)}`;
+    
+    if (kdsNav) kdsNav.style.display = ['cozinha', 'admin'].includes(currentUser.role) ? 'block' : 'none';
+    if (motoboyNav) motoboyNav.style.display = ['motoboy', 'admin'].includes(currentUser.role) ? 'block' : 'none';
+    if (adminNav) adminNav.style.display = (currentUser.role === 'admin') ? 'block' : 'none';
+  } else {
+    btn.innerHTML = `🔑 LOGIN`;
+    if (kdsNav) kdsNav.style.display = 'none';
+    if (motoboyNav) motoboyNav.style.display = 'none';
+    if (adminNav) adminNav.style.display = 'none';
+  }
+}
+
+function switchAuthTab(tab) {
+  const loginTabBtn = document.getElementById('tab-btn-login');
+  const regTabBtn = document.getElementById('tab-btn-register');
+  const loginForm = document.getElementById('form-login-pane');
+  const regForm = document.getElementById('form-register-pane');
+
+  if (tab === 'login') {
+    if (loginTabBtn) loginTabBtn.classList.add('active');
+    if (regTabBtn) regTabBtn.classList.remove('active');
+    if (loginForm) loginForm.style.display = 'block';
+    if (regForm) regForm.style.display = 'none';
+  } else {
+    if (regTabBtn) regTabBtn.classList.add('active');
+    if (loginTabBtn) loginTabBtn.classList.remove('active');
+    if (regForm) regForm.style.display = 'block';
+    if (loginForm) loginForm.style.display = 'none';
+  }
+}
+
+function openUserModal() {
+  const formsContainer = document.getElementById('auth-forms');
+  const modalTitle = document.getElementById('user-modal-title');
+
+  if (currentUser) {
+    if (modalTitle) modalTitle.textContent = 'MEU PERFIL';
+    formsContainer.innerHTML = `
+      <div style="background:var(--card-white); padding:1.2rem; border-radius:10px; border:1px solid var(--border-color); margin-bottom:1.2rem; text-align:left;">
+        <div style="font-size:1.1rem; margin-bottom:0.5rem;"><strong>Nome:</strong> ${escapeHTML(currentUser.name)}</div>
+        <div style="color:#666; margin-bottom:0.5rem;"><strong>E-mail:</strong> ${escapeHTML(currentUser.email)}</div>
+        ${currentUser.tel ? `<div style="color:#666; margin-bottom:0.5rem;"><strong>Telefone:</strong> ${escapeHTML(currentUser.tel)}</div>` : ''}
+        ${currentUser.address ? `<div style="color:#666; margin-bottom:0.5rem;"><strong>Endereço:</strong> ${escapeHTML(currentUser.address)}</div>` : ''}
+        <div><strong>Cargo:</strong> <span class="role-badge">${escapeHTML(currentUser.role)}</span></div>
+      </div>
+      
+      ${currentUser.role === 'admin' ? `
+        <button class="btn-secondary" style="width:100%; margin-bottom:0.8rem; background:var(--primary-orange); color:#FFF;" onclick="selectNav('admin'); closeUserModal();">👑 ACESSAR PAINEL ADMIN</button>
+      ` : ''}
+      ${currentUser.role === 'cozinha' ? `
+        <button class="btn-secondary" style="width:100%; margin-bottom:0.8rem; background:var(--primary-orange); color:#FFF;" onclick="selectNav('kds'); closeUserModal();">🍳 ACESSAR COZINHA (KDS)</button>
+      ` : ''}
+      ${currentUser.role === 'motoboy' ? `
+        <button class="btn-secondary" style="width:100%; margin-bottom:0.8rem; background:var(--primary-orange); color:#FFF;" onclick="selectNav('motoboy'); closeUserModal();">🛵 ACESSAR PAINEL ENTREGAS</button>
+      ` : ''}
+
+      <button class="btn-primary" style="width:100%; background:#C62828;" onclick="handleLogout()">🚪 SAIR DA CONTA (LOGOUT)</button>
+    `;
+  } else {
+    if (modalTitle) modalTitle.textContent = 'ACESSO DO USUÁRIO';
+    formsContainer.innerHTML = `
+      <div class="modal-tab-header">
+        <button id="tab-btn-login" class="modal-tab-btn active" onclick="switchAuthTab('login')">🔑 ENTRAR</button>
+        <button id="tab-btn-register" class="modal-tab-btn" onclick="switchAuthTab('register')">📝 CADASTRAR</button>
+      </div>
+
+      <div id="form-login-pane">
+        <div class="form-group">
+          <label>E-mail</label>
+          <input type="email" id="auth-email" class="form-control" placeholder="seu@email.com">
+        </div>
+        <div class="form-group">
+          <label>Senha</label>
+          <input type="password" id="auth-pass" class="form-control" placeholder="••••••••">
+        </div>
+        <button class="btn-primary" style="width:100%; margin-top:0.5rem;" onclick="handleLogin()">ENTRAR NO SISTEMA</button>
+      </div>
+
+      <div id="form-register-pane" style="display:none;">
+        <div class="form-group">
+          <label>Nome Completo *</label>
+          <input type="text" id="reg-name" class="form-control" placeholder="Seu Nome">
+        </div>
+        <div class="form-group">
+          <label>E-mail *</label>
+          <input type="email" id="reg-email" class="form-control" placeholder="seu@email.com">
+        </div>
+        <div class="form-group">
+          <label>WhatsApp / Telefone</label>
+          <input type="text" id="reg-tel" class="form-control" placeholder="(19) 99999-8888">
+        </div>
+        <div class="form-group">
+          <label>Endereço de Entrega</label>
+          <input type="text" id="reg-address" class="form-control" placeholder="Rua, Número, Bairro">
+        </div>
+        <div class="form-group">
+          <label>Senha (mínimo 6 caracteres) *</label>
+          <input type="password" id="reg-pass" class="form-control" placeholder="••••••••">
+        </div>
+        <button class="btn-primary" style="width:100%; margin-top:0.5rem;" onclick="handleSignup()">CADASTRAR E ENTRAR</button>
+      </div>
+    `;
+  }
+  document.getElementById('user-modal').classList.add('open');
+}
+
 function closeUserModal() { document.getElementById('user-modal').classList.remove('open'); }
 
 // 1. KDS COZINHA (#page-kds)
