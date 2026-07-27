@@ -1,0 +1,20 @@
+:root {
+  --primary-orange: #FF5500;
+  --primary-bright: #FF7700;
+  --orange-hover: #E04A00;
+  --bg-body: #F8F6F2;
+  --bg-hero: linear-gradient(135deg, #141414 0%, #1F1B18 50%, #2A170C 100%);
+  --bg-kds: #121214;
+  --bg-kds-card: #1E1E24;
+  --text-main: #1F1F1F;
+  --text-muted: #665952;
+  --border-color: #E2D7CC;
+  --border-strong: #FF5500;
+  --shadow-sm: 0 4px 16px rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 10px 28px rgba(0, 0, 0, 0.12);
+  --shadow-lg: 0 18px 40px rgba(0, 0, 0, 0.22);
+  --shadow-glow: 0 0 25px rgba(255, 85, 0, 0.55);
+  --radius-sm: 12px;
+  --radius-md: 18px;
+  --radius-lg: 28px;
+}

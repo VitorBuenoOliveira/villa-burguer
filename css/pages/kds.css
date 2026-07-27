@@ -1,0 +1,36 @@
+/* KDS (KITCHEN DISPLAY SYSTEM) STYLES */
+.kds-container { background: var(--bg-kds); color: #FFF; min-height: calc(100vh - 76px); padding: 2rem; }
+.kds-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; border-bottom: 2px solid #333; padding-bottom: 1rem; }
+.kds-title { font-family: 'Bebas Neue', sans-serif; font-size: 2.5rem; color: #FF7700; display: flex; align-items: center; gap: 0.8rem; }
+.kds-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 1.5rem; }
+
+.kds-ticket { background: var(--bg-kds-card); border-radius: 14px; border: 2px solid #333; overflow: hidden; box-shadow: 0 8px 24px rgba(0,0,0,0.4); display: flex; flex-direction: column; }
+.kds-ticket-header { padding: 1rem; background: #2A2A32; display: flex; justify-content: space-between; align-items: center; }
+.kds-code { font-family: 'Bebas Neue', sans-serif; font-size: 1.8rem; color: #FF7700; }
+.kds-timer { padding: 0.3rem 0.8rem; border-radius: 20px; font-weight: 800; font-size: 0.85rem; }
+
+.timer-green { background: #1B5E20; color: #81C784; }
+.timer-yellow { background: #F57F17; color: #FFF59D; }
+.timer-orange { background: #E65100; color: #FFE0B2; }
+.timer-red { background: #B71C1C; color: #EF9A9A; animation: pulse 1s infinite; }
+
+.kds-ticket-body { padding: 1rem; flex: 1; }
+.kds-client-name { font-size: 1.1rem; font-weight: 800; margin-bottom: 0.2rem; color: #FFF; }
+.kds-type { font-size: 0.85rem; color: #AAA; margin-bottom: 1rem; text-transform: uppercase; }
+.kds-item { padding: 0.6rem 0; border-bottom: 1px dashed #444; font-size: 0.95rem; }
+.kds-item-obs { background: #332612; color: #FFB74D; padding: 0.3rem 0.6rem; border-radius: 6px; font-size: 0.85rem; margin-top: 0.3rem; }
+.kds-actions { padding: 1rem; background: #18181C; display: flex; gap: 0.6rem; }
+.kds-btn { flex: 1; padding: 0.7rem; border: none; border-radius: 8px; font-weight: 800; cursor: pointer; text-transform: uppercase; font-size: 0.85rem; }
+
+@media (max-width: 900px) {
+  .kds-grid { grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1rem; }
+}
+
+@media (max-width: 768px) {
+  .kds-container { padding: 1rem; }
+  .kds-header { flex-direction: column; gap: 1rem; align-items: flex-start; }
+}
+
+@media (max-width: 480px) {
+  .kds-grid { grid-template-columns: 1fr; }
+}

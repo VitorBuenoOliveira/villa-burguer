@@ -1,0 +1,31 @@
+/* RASTREIO TIMELINE STYLES */
+.track-card { background: #FFF; border-radius: var(--radius-md); padding: 2rem; max-width: 750px; margin: 3rem auto; box-shadow: var(--shadow-md); border: 1px solid var(--border-color); }
+.timeline { display: flex; justify-content: space-between; position: relative; margin: 2.5rem 0; }
+.timeline::before { content: ''; position: absolute; top: 18px; left: 10%; right: 10%; height: 4px; background: #E0E0E0; z-index: 1; }
+.timeline-progress { position: absolute; top: 18px; left: 10%; height: 4px; background: #FF5500; z-index: 1; transition: width 0.4s ease; }
+.timeline-step { position: relative; z-index: 2; text-align: center; width: 25%; }
+.step-icon { width: 40px; height: 40px; border-radius: 50%; background: #E0E0E0; color: #666; display: flex; align-items: center; justify-content: center; margin: 0 auto 0.6rem; font-weight: 800; border: 3px solid #FFF; box-shadow: var(--shadow-sm); }
+.timeline-step.active .step-icon { background: #FF5500; color: #FFF; box-shadow: 0 0 15px rgba(255,85,0,0.6); }
+.step-label { font-size: 0.85rem; font-weight: 800; color: #666; text-transform: uppercase; }
+.timeline-step.active .step-label { color: #FF5500; }
+
+.track-search-row { display: flex; gap: 0.6rem; margin: 1.5rem 0; }
+
+@media (max-width: 768px) {
+  .track-card { margin: 1.5rem 1rem; padding: 1.2rem; }
+  .timeline { margin: 2rem 0; }
+  .step-label { font-size: 0.75rem; }
+}
+
+@media (max-width: 600px) {
+  .track-search-row { flex-direction: column; }
+  .track-search-row button { width: 100%; }
+}
+
+@media (max-width: 480px) {
+  .timeline::before { display: none; }
+  .timeline-progress { display: none; }
+  .timeline { flex-direction: column; gap: 1rem; align-items: flex-start; }
+  .timeline-step { width: 100%; display: flex; align-items: center; gap: 1rem; text-align: left; }
+  .step-icon { margin: 0; }
+}
