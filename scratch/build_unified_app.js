@@ -1,4 +1,14 @@
-<!DOCTYPE html>
+const fs = require('fs');
+
+// 1. Ler o CSS original completo
+const originalCss = fs.readFileSync('scratch/original_css.css', 'utf8');
+
+// Adicionar estilos específicos de KDS, Track, Motoboy e Admin ao CSS
+fs.writeFileSync('css/base.css', originalCss, 'utf8');
+console.log('css/base.css atualizado com o design system original completo!');
+
+// 2. Construir o index.html restaurado mantendo todas as novas funcionalidades
+const htmlContent = `<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
@@ -416,7 +426,7 @@ try {
   socket.on('connect', () => console.log('⚡ Conectado ao servidor de WebSockets.'));
   socket.on('order:new', (order) => {
     playKdsAudioChime();
-    showNotif(`🔔 Novo pedido #${order.orderCode} recebido!`);
+    showNotif(\`🔔 Novo pedido #\${order.orderCode} recebido!\`);
     loadKdsOrders();
   });
   socket.on('order:updated', () => {
@@ -512,16 +522,16 @@ function carouselMove(dir) {
   if (carouselPos < 0) carouselPos = cards.length - 1;
   if (carouselPos >= cards.length) carouselPos = 0;
   const cardWidth = cards[0].offsetWidth + 20;
-  track.style.transform = `translateX(-${carouselPos * cardWidth}px)`;
+  track.style.transform = \`translateX(-\${carouselPos * cardWidth}px)\`;
   updateCarouselDots(cards.length);
 }
 
 function updateCarouselDots(total) {
   const dotsContainer = document.getElementById('carousel-dots');
   if (!dotsContainer) return;
-  dotsContainer.innerHTML = Array.from({length: total}).map((_, i) => `
-    <span class="carousel-dot ${i === carouselPos ? 'active' : ''}" onclick="goToCarouselSlide(${i})"></span>
-  `).join('');
+  dotsContainer.innerHTML = Array.from({length: total}).map((_, i) => \`
+    <span class="carousel-dot \${i === carouselPos ? 'active' : ''}" onclick="goToCarouselSlide(\${i})"></span>
+  \`).join('');
 }
 
 function goToCarouselSlide(idx) {
@@ -532,7 +542,7 @@ function goToCarouselSlide(idx) {
 // CARREGAR CARDÁPIO E PRODUTOS
 async function loadMenu() {
   try {
-    const res = await fetch(`${API_URL}/products`);
+    const res = await fetch(\`\${API_URL}/products\`);
     if (res.ok) {
       allProducts = await res.json();
       renderHomeDestaques(allProducts);
@@ -553,19 +563,19 @@ function renderHomeDestaques(pricing) {
     pricing[cat].forEach(i => { if (i.active) items.push(i); });
   });
   
-  track.innerHTML = items.slice(0, 8).map(item => `
+  track.innerHTML = items.slice(0, 8).map(item => \`
     <div class="card-item" style="min-width:280px; flex-shrink:0;">
-      <img src="${escapeHTML(item.img)}" class="card-img" alt="${escapeHTML(item.name)}">
+      <img src="\${escapeHTML(item.img)}" class="card-img" alt="\${escapeHTML(item.name)}">
       <div class="card-content">
-        <div class="card-name">${escapeHTML(item.name)}</div>
-        <div class="card-desc">${escapeHTML(item.desc || '')}</div>
+        <div class="card-name">\${escapeHTML(item.name)}</div>
+        <div class="card-desc">\${escapeHTML(item.desc || '')}</div>
         <div class="card-price-row">
-          <span class="card-price">${fmt(item.base)}</span>
-          <button class="btn-primary" onclick="addToCart(${item.id}, '${escapeHTML(item.name)}', ${item.base})">PEDIR AGORA</button>
+          <span class="card-price">\${fmt(item.base)}</span>
+          <button class="btn-primary" onclick="addToCart(\${item.id}, '\${escapeHTML(item.name)}', \${item.base})">PEDIR AGORA</button>
         </div>
       </div>
     </div>
-  `).join('');
+  \`).join('');
 
   updateCarouselDots(Math.min(items.length, 8));
 }
@@ -578,23 +588,23 @@ function switchMenuTab(cat, btnEl) {
   const container = document.getElementById('menu-content-container');
   if (!container || !allProducts[cat]) return;
 
-  container.innerHTML = `
+  container.innerHTML = \`
     <div class="menu-grid">
-      ${allProducts[cat].map(item => `
+      \${allProducts[cat].map(item => \`
         <div class="card-item">
-          <img src="${escapeHTML(item.img)}" class="card-img" alt="${escapeHTML(item.name)}">
+          <img src="\${escapeHTML(item.img)}" class="card-img" alt="\${escapeHTML(item.name)}">
           <div class="card-content">
-            <div class="card-name">${escapeHTML(item.name)}</div>
-            <div class="card-desc">${escapeHTML(item.desc || '')}</div>
+            <div class="card-name">\${escapeHTML(item.name)}</div>
+            <div class="card-desc">\${escapeHTML(item.desc || '')}</div>
             <div class="card-price-row">
-              <span class="card-price">${fmt(item.base)}</span>
-              <button class="btn-primary" onclick="addToCart(${item.id}, '${escapeHTML(item.name)}', ${item.base})">ADICIONAR</button>
+              <span class="card-price">\${fmt(item.base)}</span>
+              <button class="btn-primary" onclick="addToCart(\${item.id}, '\${escapeHTML(item.name)}', \${item.base})">ADICIONAR</button>
             </div>
           </div>
         </div>
-      `).join('')}
+      \`).join('')}
     </div>
-  `;
+  \`;
 }
 
 function filterOrder(cat, btnEl) {
@@ -615,26 +625,26 @@ function renderOrderGrid(pricing, filterCat = 'todos') {
     }
   });
 
-  container.innerHTML = items.map(item => `
+  container.innerHTML = items.map(item => \`
     <div class="card-item">
-      <img src="${escapeHTML(item.img)}" class="card-img" alt="${escapeHTML(item.name)}">
+      <img src="\${escapeHTML(item.img)}" class="card-img" alt="\${escapeHTML(item.name)}">
       <div class="card-content">
-        <div class="card-name">${escapeHTML(item.name)}</div>
-        <div class="card-desc">${escapeHTML(item.desc || '')}</div>
+        <div class="card-name">\${escapeHTML(item.name)}</div>
+        <div class="card-desc">\${escapeHTML(item.desc || '')}</div>
         <div class="card-price-row">
-          <span class="card-price">${fmt(item.base)}</span>
-          <button class="btn-primary" onclick="addToCart(${item.id}, '${escapeHTML(item.name)}', ${item.base})">ADICIONAR</button>
+          <span class="card-price">\${fmt(item.base)}</span>
+          <button class="btn-primary" onclick="addToCart(\${item.id}, '\${escapeHTML(item.name)}', \${item.base})">ADICIONAR</button>
         </div>
       </div>
     </div>
-  `).join('');
+  \`).join('');
 }
 
 function addToCart(id, name, price) {
   const existing = cart.find(i => i.id === id);
   if (existing) { existing.qty++; } else { cart.push({ id, name, price, qty: 1 }); }
   updateCartUI();
-  showNotif(`🍔 ${name} adicionado ao carrinho!`);
+  showNotif(\`🍔 \${name} adicionado ao carrinho!\`);
 }
 
 function updateCartUI() {
@@ -651,15 +661,15 @@ function updateCartUI() {
     if (cart.length === 0) {
       cartItems.innerHTML = '<div class="cart-empty">Seu carrinho está vazio 🛒</div>';
     } else {
-      cartItems.innerHTML = cart.map(i => `
+      cartItems.innerHTML = cart.map(i => \`
         <div style="display:flex; justify-content:space-between; align-items:center; padding:0.5rem 0; border-bottom:1px solid #EEE;">
-          <div><strong>${i.qty}x ${escapeHTML(i.name)}</strong></div>
+          <div><strong>\${i.qty}x \${escapeHTML(i.name)}</strong></div>
           <div style="display:flex; gap:0.4rem; align-items:center;">
-            <span>${fmt(i.price * i.qty)}</span>
-            <button style="background:none; border:none; color:red; cursor:pointer; font-weight:800;" onclick="removeFromCart(${i.id})">✕</button>
+            <span>\${fmt(i.price * i.qty)}</span>
+            <button style="background:none; border:none; color:red; cursor:pointer; font-weight:800;" onclick="removeFromCart(\${i.id})">✕</button>
           </div>
         </div>
-      `).join('');
+      \`).join('');
     }
   }
 
@@ -705,11 +715,11 @@ async function submitCheckout() {
   };
 
   try {
-    const res = await fetch(`${API_URL}/orders`, {
+    const res = await fetch(\`\${API_URL}/orders\`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...(currentUser ? { 'Authorization': `Bearer ${currentUser.token}` } : {})
+        ...(currentUser ? { 'Authorization': \`Bearer \${currentUser.token}\` } : {})
       },
       body: JSON.stringify(payload)
     });
@@ -723,7 +733,7 @@ async function submitCheckout() {
     }));
 
     if (payment === 'pix') {
-      const payRes = await fetch(`${API_URL}/payments/create`, {
+      const payRes = await fetch(\`\${API_URL}/payments/create\`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ orderId: data.orderId, method: 'pix' })
@@ -732,9 +742,9 @@ async function submitCheckout() {
       
       document.getElementById('pay-pix-area').style.display = 'block';
       document.getElementById('pix-copia-cola').value = payData.qrCode || 'PIX_CODE_DEMO';
-      showNotif(`Código Pix gerado para o pedido #${data.orderCode}!`);
+      showNotif(\`Código Pix gerado para o pedido #\${data.orderCode}!\`);
     } else {
-      showNotif(`Pedido #${data.orderCode} criado com sucesso!`);
+      showNotif(\`Pedido #\${data.orderCode} criado com sucesso!\`);
       closeCartModal();
       cart = [];
       updateCartUI();
@@ -760,7 +770,7 @@ async function handleLogin() {
   const password = document.getElementById('auth-pass').value;
 
   try {
-    const res = await fetch(`${API_URL}/login`, {
+    const res = await fetch(\`\${API_URL}/login\`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password })
@@ -772,7 +782,7 @@ async function handleLogin() {
       localStorage.setItem('villaburguer_user_v2', JSON.stringify(currentUser));
       updateNavRoles();
       closeUserModal();
-      showNotif(`Bem-vindo, ${currentUser.name}! 👋`);
+      showNotif(\`Bem-vindo, \${currentUser.name}! 👋\`);
     } else {
       alert(data.error || 'Erro ao realizar login.');
     }
@@ -784,13 +794,13 @@ async function handleLogin() {
 function updateNavRoles() {
   const btn = document.getElementById('nav-user-btn');
   if (currentUser) {
-    btn.innerHTML = `👤 ${currentUser.name} <span class="role-badge">${currentUser.role}</span>`;
+    btn.innerHTML = \`👤 \${currentUser.name} <span class="role-badge">\${currentUser.role}</span>\`;
     
     if (['cozinha', 'admin'].includes(currentUser.role)) document.getElementById('nav-item-kds').style.display = 'block';
     if (['motoboy', 'admin'].includes(currentUser.role)) document.getElementById('nav-item-motoboy').style.display = 'block';
     if (currentUser.role === 'admin') document.getElementById('nav-item-admin').style.display = 'block';
   } else {
-    btn.innerHTML = `🔑 LOGIN`;
+    btn.innerHTML = \`🔑 LOGIN\`;
   }
 }
 
@@ -801,8 +811,8 @@ function closeUserModal() { document.getElementById('user-modal').classList.remo
 async function loadKdsOrders() {
   if (!currentUser) return;
   try {
-    const res = await fetch(`${API_URL}/orders/kds`, {
-      headers: { 'Authorization': `Bearer ${currentUser.token}` }
+    const res = await fetch(\`\${API_URL}/orders/kds\`, {
+      headers: { 'Authorization': \`Bearer \${currentUser.token}\` }
     });
     if (res.ok) {
       const orders = await res.json();
@@ -813,7 +823,7 @@ async function loadKdsOrders() {
 
 function renderKdsGrid(orders) {
   const grid = document.getElementById('kds-grid');
-  document.getElementById('kds-count-badge').textContent = `${orders.length} PEDIDOS ATIVOS`;
+  document.getElementById('kds-count-badge').textContent = \`\${orders.length} PEDIDOS ATIVOS\`;
   
   if (orders.length === 0) {
     grid.innerHTML = '<div style="color:#888; text-align:center; grid-column:1/-1; padding:3rem;">Nenhum pedido pendente na cozinha no momento. 🍳</div>';
@@ -827,41 +837,41 @@ function renderKdsGrid(orders) {
     if (minutesAgo > 30) timerClass = 'timer-orange';
     if (minutesAgo > 45) timerClass = 'timer-red';
 
-    return `
+    return \`
       <div class="kds-ticket">
         <div class="kds-ticket-header">
-          <span class="kds-code">${o.orderCode}</span>
-          <span class="kds-timer ${timerClass}">${minutesAgo}m decorridos</span>
+          <span class="kds-code">\${o.orderCode}</span>
+          <span class="kds-timer \${timerClass}">\${minutesAgo}m decorridos</span>
         </div>
         <div class="kds-ticket-body">
-          <div class="kds-client-name">${escapeHTML(o.clientName)}</div>
-          <div class="kds-type">${o.type === 'delivery' ? '🛵 DELIVERY' : '🛍️ RETIRADA'}</div>
-          ${o.items.map(i => `
+          <div class="kds-client-name">\${escapeHTML(o.clientName)}</div>
+          <div class="kds-type">\${o.type === 'delivery' ? '🛵 DELIVERY' : '🛍️ RETIRADA'}</div>
+          \${o.items.map(i => \`
             <div class="kds-item">
-              <strong>${i.qty}x ${escapeHTML(i.name)}</strong>
-              ${i.obs ? `<div class="kds-item-obs">⚠️ ${escapeHTML(i.obs)}</div>` : ''}
+              <strong>\${i.qty}x \${escapeHTML(i.name)}</strong>
+              \${i.obs ? \`<div class="kds-item-obs">⚠️ \${escapeHTML(i.obs)}</div>\` : ''}
             </div>
-          `).join('')}
+          \`).join('')}
         </div>
         <div class="kds-actions">
-          ${o.status === 'pendente' ? `<button class="kds-btn" style="background:#FF7700; color:#FFF;" onclick="updateOrderStatus(${o.id}, 'em_preparo')">INICIAR PREPARO</button>` : ''}
-          ${o.status === 'em_preparo' ? `<button class="kds-btn" style="background:#2E7D32; color:#FFF;" onclick="updateOrderStatus(${o.id}, 'pronto')">PRONTO</button>` : ''}
-          <button class="kds-btn" style="background:#C62828; color:#FFF;" onclick="cancelOrderPrompt(${o.id})">CANCELAR</button>
+          \${o.status === 'pendente' ? \`<button class="kds-btn" style="background:#FF7700; color:#FFF;" onclick="updateOrderStatus(\${o.id}, 'em_preparo')">INICIAR PREPARO</button>\` : ''}
+          \${o.status === 'em_preparo' ? \`<button class="kds-btn" style="background:#2E7D32; color:#FFF;" onclick="updateOrderStatus(\${o.id}, 'pronto')">PRONTO</button>\` : ''}
+          <button class="kds-btn" style="background:#C62828; color:#FFF;" onclick="cancelOrderPrompt(\${o.id})">CANCELAR</button>
         </div>
       </div>
-    `;
+    \`;
   }).join('');
 }
 
 async function updateOrderStatus(orderId, status, cancelReason = '') {
   try {
-    const res = await fetch(`${API_URL}/orders/${orderId}/status`, {
+    const res = await fetch(\`\${API_URL}/orders/\${orderId}/status\`, {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${currentUser.token}` },
+      headers: { 'Content-Type': 'application/json', 'Authorization': \`Bearer \${currentUser.token}\` },
       body: JSON.stringify({ status, cancelReason })
     });
     if (res.ok) {
-      showNotif(`Status do pedido atualizado para ${status}`);
+      showNotif(\`Status do pedido atualizado para \${status}\`);
       loadKdsOrders();
       loadMotoboyOrders();
     }
@@ -899,12 +909,12 @@ async function fetchOrderTracking(codeInp, tokenInp) {
   if (!code || !token) { alert('Informe o código e o token de rastreio.'); return; }
 
   try {
-    const res = await fetch(`${API_URL}/orders/track/${code}?token=${token}`);
+    const res = await fetch(\`\${API_URL}/orders/track/\${code}?token=\${token}\`);
     if (res.ok) {
       const data = await res.json();
       document.getElementById('track-result').style.display = 'block';
       document.getElementById('tr-code').textContent = data.orderCode;
-      document.getElementById('tr-client').textContent = `Cliente: ${data.clientName} · ${data.type.toUpperCase()}`;
+      document.getElementById('tr-client').textContent = \`Cliente: \${data.clientName} · \${data.type.toUpperCase()}\`;
       document.getElementById('tr-status-badge').textContent = data.status.toUpperCase();
 
       let progressWidth = '0%';
@@ -913,7 +923,7 @@ async function fetchOrderTracking(codeInp, tokenInp) {
       if (data.status === 'concluido') progressWidth = '100%';
       document.getElementById('tr-progress').style.width = progressWidth;
 
-      if (socket) socket.emit('join_room', `track_${data.orderCode}`);
+      if (socket) socket.emit('join_room', \`track_\${data.orderCode}\`);
     } else {
       alert('Pedido não encontrado ou token de rastreio inválido.');
     }
@@ -924,8 +934,8 @@ async function fetchOrderTracking(codeInp, tokenInp) {
 async function loadMotoboyOrders() {
   if (!currentUser) return;
   try {
-    const res = await fetch(`${API_URL}/orders/motoboy`, {
-      headers: { 'Authorization': `Bearer ${currentUser.token}` }
+    const res = await fetch(\`\${API_URL}/orders/motoboy\`, {
+      headers: { 'Authorization': \`Bearer \${currentUser.token}\` }
     });
     if (res.ok) {
       const orders = await res.json();
@@ -942,60 +952,60 @@ function renderMotoboyGrid(orders) {
     return;
   }
 
-  grid.innerHTML = orders.map(o => `
+  grid.innerHTML = orders.map(o => \`
     <div class="card-item" style="padding:1.2rem;">
       <div style="display:flex; justify-content:space-between; margin-bottom:0.6rem;">
-        <strong style="font-size:1.4rem; color:var(--primary-orange);">${o.orderCode}</strong>
-        <span class="role-badge" style="background:#2E7D32;">${o.status.toUpperCase()}</span>
+        <strong style="font-size:1.4rem; color:var(--primary-orange);">\${o.orderCode}</strong>
+        <span class="role-badge" style="background:#2E7D32;">\${o.status.toUpperCase()}</span>
       </div>
-      <div><strong>Cliente:</strong> ${escapeHTML(o.clientName)}</div>
-      <div><strong>Telefone:</strong> ${escapeHTML(o.clientPhone || 'Não informado')}</div>
-      <div style="margin-bottom:1rem;"><strong>Endereço:</strong> ${escapeHTML(o.clientAddress || 'Retirada no Balcão')}</div>
-      ${o.status === 'pronto' ? `<button class="btn-primary" style="width:100%; font-size:0.9rem;" onclick="updateOrderStatus(${o.id}, 'saiu_entrega')">🛵 SAIU PARA ENTREGA</button>` : ''}
-      ${o.status === 'saiu_entrega' ? `<button class="btn-primary" style="width:100%; font-size:0.9rem; background:#2E7D32;" onclick="updateOrderStatus(${o.id}, 'concluido')">✅ MARCAR COMO ENTREGUE</button>` : ''}
+      <div><strong>Cliente:</strong> \${escapeHTML(o.clientName)}</div>
+      <div><strong>Telefone:</strong> \${escapeHTML(o.clientPhone || 'Não informado')}</div>
+      <div style="margin-bottom:1rem;"><strong>Endereço:</strong> \${escapeHTML(o.clientAddress || 'Retirada no Balcão')}</div>
+      \${o.status === 'pronto' ? \`<button class="btn-primary" style="width:100%; font-size:0.9rem;" onclick="updateOrderStatus(\${o.id}, 'saiu_entrega')">🛵 SAIU PARA ENTREGA</button>\` : ''}
+      \${o.status === 'saiu_entrega' ? \`<button class="btn-primary" style="width:100%; font-size:0.9rem; background:#2E7D32;" onclick="updateOrderStatus(\${o.id}, 'concluido')">✅ MARCAR COMO ENTREGUE</button>\` : ''}
     </div>
-  `).join('');
+  \`).join('');
 }
 
 // 4. ADMIN (#page-admin: RBAC, PRODUTOS, AUDIT, REPORTS)
 async function loadAdminUsers() {
   if (!currentUser || currentUser.role !== 'admin') return;
   try {
-    const res = await fetch(`${API_URL}/users`, {
-      headers: { 'Authorization': `Bearer ${currentUser.token}` }
+    const res = await fetch(\`\${API_URL}/users\`, {
+      headers: { 'Authorization': \`Bearer \${currentUser.token}\` }
     });
     if (res.ok) {
       const users = await res.json();
       const tbody = document.getElementById('admin-users-tbody');
-      tbody.innerHTML = users.map(u => `
+      tbody.innerHTML = users.map(u => \`
         <tr style="border-bottom:1px solid #EEE;">
-          <td style="padding:0.8rem;">#${u.id}</td>
-          <td style="padding:0.8rem;"><strong>${escapeHTML(u.name)}</strong></td>
-          <td style="padding:0.8rem;">${escapeHTML(u.email)}</td>
-          <td style="padding:0.8rem;"><span class="role-badge">${u.role}</span></td>
+          <td style="padding:0.8rem;">#\${u.id}</td>
+          <td style="padding:0.8rem;"><strong>\${escapeHTML(u.name)}</strong></td>
+          <td style="padding:0.8rem;">\${escapeHTML(u.email)}</td>
+          <td style="padding:0.8rem;"><span class="role-badge">\${u.role}</span></td>
           <td style="padding:0.8rem;">
-            <select onchange="changeUserRole(${u.id}, this.value)" style="padding:0.4rem; border-radius:6px;">
-              <option value="cliente" ${u.role === 'cliente' ? 'selected' : ''}>cliente</option>
-              <option value="cozinha" ${u.role === 'cozinha' ? 'selected' : ''}>cozinha</option>
-              <option value="motoboy" ${u.role === 'motoboy' ? 'selected' : ''}>motoboy</option>
-              <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>admin</option>
+            <select onchange="changeUserRole(\${u.id}, this.value)" style="padding:0.4rem; border-radius:6px;">
+              <option value="cliente" \${u.role === 'cliente' ? 'selected' : ''}>cliente</option>
+              <option value="cozinha" \${u.role === 'cozinha' ? 'selected' : ''}>cozinha</option>
+              <option value="motoboy" \${u.role === 'motoboy' ? 'selected' : ''}>motoboy</option>
+              <option value="admin" \${u.role === 'admin' ? 'selected' : ''}>admin</option>
             </select>
           </td>
         </tr>
-      `).join('');
+      \`).join('');
     }
   } catch(e) {}
 }
 
 async function changeUserRole(userId, newRole) {
   try {
-    const res = await fetch(`${API_URL}/users/${userId}/role`, {
+    const res = await fetch(\`\${API_URL}/users/\${userId}/role\`, {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${currentUser.token}` },
+      headers: { 'Content-Type': 'application/json', 'Authorization': \`Bearer \${currentUser.token}\` },
       body: JSON.stringify({ role: newRole })
     });
     if (res.ok) {
-      showNotif(`Cargo do usuário #${userId} alterado para ${newRole}`);
+      showNotif(\`Cargo do usuário #\${userId} alterado para \${newRole}\`);
       loadAdminUsers();
     }
   } catch(e) {}
@@ -1006,22 +1016,22 @@ function renderAdminProductsList(pricing) {
   if (!container) return;
   let html = '';
   Object.keys(pricing).forEach(cat => {
-    html += `<h4 style="margin:1.5rem 0 0.8rem; font-family:'Bebas Neue',sans-serif; font-size:1.6rem; color:var(--primary-orange); border-bottom:1px solid #DDD;">CATEGORIA: ${cat.toUpperCase()}</h4>`;
+    html += \`<h4 style="margin:1.5rem 0 0.8rem; font-family:'Bebas Neue',sans-serif; font-size:1.6rem; color:var(--primary-orange); border-bottom:1px solid #DDD;">CATEGORIA: \${cat.toUpperCase()}</h4>\`;
     html += '<div class="menu-grid" style="padding:0.5rem 0;">';
     pricing[cat].forEach(item => {
-      html += `
-        <div class="card-item" style="opacity:${item.active ? '1' : '0.6'};">
-          <img src="${escapeHTML(item.img)}" class="card-img" alt="${escapeHTML(item.name)}">
+      html += \`
+        <div class="card-item" style="opacity:\${item.active ? '1' : '0.6'};">
+          <img src="\${escapeHTML(item.img)}" class="card-img" alt="\${escapeHTML(item.name)}">
           <div class="card-content">
-            <div class="card-name">${escapeHTML(item.name)}</div>
-            <div class="card-desc">${escapeHTML(item.desc || '')}</div>
+            <div class="card-name">\${escapeHTML(item.name)}</div>
+            <div class="card-desc">\${escapeHTML(item.desc || '')}</div>
             <div class="card-price-row">
-              <span class="card-price">${fmt(item.base)}</span>
-              <span class="role-badge" style="background:${item.active ? '#2E7D32' : '#C62828'};">${item.active ? 'ATIVO' : 'INATIVO'}</span>
+              <span class="card-price">\${fmt(item.base)}</span>
+              <span class="role-badge" style="background:\${item.active ? '#2E7D32' : '#C62828'};">\${item.active ? 'ATIVO' : 'INATIVO'}</span>
             </div>
           </div>
         </div>
-      `;
+      \`;
     });
     html += '</div>';
   });
@@ -1030,45 +1040,45 @@ function renderAdminProductsList(pricing) {
 
 async function loadAdminAuditLogs() {
   try {
-    const res = await fetch(`${API_URL}/audit-logs`, {
-      headers: { 'Authorization': `Bearer ${currentUser.token}` }
+    const res = await fetch(\`\${API_URL}/audit-logs\`, {
+      headers: { 'Authorization': \`Bearer \${currentUser.token}\` }
     });
     if (res.ok) {
       const logs = await res.json();
       const container = document.getElementById('admin-audit-logs');
-      container.innerHTML = logs.map(l => `
+      container.innerHTML = logs.map(l => \`
         <div style="padding:0.6rem 0; border-bottom:1px solid #EEE; font-size:0.9rem;">
-          <strong style="color:var(--primary-orange);">${l.action}</strong> por <strong>${escapeHTML(l.performed_by_name)}</strong>
-          <div style="color:#666; font-size:0.8rem;">Alvo: ${l.target} | ${l.created_at} | ${escapeHTML(l.details)}</div>
+          <strong style="color:var(--primary-orange);">\${l.action}</strong> por <strong>\${escapeHTML(l.performed_by_name)}</strong>
+          <div style="color:#666; font-size:0.8rem;">Alvo: \${l.target} | \${l.created_at} | \${escapeHTML(l.details)}</div>
         </div>
-      `).join('');
+      \`).join('');
     }
   } catch(e) {}
 }
 
 async function loadAdminReports() {
   try {
-    const res = await fetch(`${API_URL}/reports/sales`, {
-      headers: { 'Authorization': `Bearer ${currentUser.token}` }
+    const res = await fetch(\`\${API_URL}/reports/sales\`, {
+      headers: { 'Authorization': \`Bearer \${currentUser.token}\` }
     });
     if (res.ok) {
       const rep = await res.json();
       const container = document.getElementById('admin-reports-content');
-      container.innerHTML = `
+      container.innerHTML = \`
         <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:1rem; margin-bottom:1.5rem;">
           <div style="background:#FFF5EF; padding:1rem; border-radius:10px; text-align:center;">
             <div style="font-size:0.9rem; color:#666;">RECEITA TOTAL</div>
-            <strong style="font-size:1.8rem; color:var(--primary-orange);">${fmt(rep.totalRevenueFloat)}</strong>
-            <div style="font-size:0.8rem; color:#888;">(${rep.totalRevenueCents} centavos)</div>
+            <strong style="font-size:1.8rem; color:var(--primary-orange);">\${fmt(rep.totalRevenueFloat)}</strong>
+            <div style="font-size:0.8rem; color:#888;">(\${rep.totalRevenueCents} centavos)</div>
           </div>
           <div style="background:#E8F5E9; padding:1rem; border-radius:10px; text-align:center;">
             <div style="font-size:0.9rem; color:#666;">TOTAL DE PEDIDOS</div>
-            <strong style="font-size:1.8rem; color:#2E7D32;">${rep.totalOrders}</strong>
+            <strong style="font-size:1.8rem; color:#2E7D32;">\${rep.totalOrders}</strong>
           </div>
         </div>
         <h4>Mais Vendidos:</h4>
-        <ul>${rep.topProducts.map(p => `<li><strong>${escapeHTML(p[0])}:</strong> ${p[1]} unidades</li>`).join('')}</ul>
-      `;
+        <ul>\${rep.topProducts.map(p => \`<li><strong>\${escapeHTML(p[0])}:</strong> \${p[1]} unidades</li>\`).join('')}</ul>
+      \`;
     }
   } catch(e) {}
 }
@@ -1108,3 +1118,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 </body>
 </html>
+`;
+
+fs.writeFileSync('index.html', htmlContent, 'utf8');
+console.log('index.html restaurado com sucesso!');
