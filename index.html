@@ -8,6 +8,8 @@
 <meta name="keywords" content="hamburguer, hamburgueria, hortolândia, artesanal, delivery, villa burguer, KDS, pedidos">
 <meta name="author" content="Villa Burguer">
 <meta name="theme-color" content="#E65100">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<base href="/">
 
 <!-- Open Graph -->
 <meta property="og:title" content="Villa Burguer – Hortolândia 🍔">
@@ -219,16 +221,21 @@
   <div class="track-card">
     <h2 style="font-family:'Bebas Neue',sans-serif; font-size:2.4rem; color:var(--primary-orange); text-align:center;">ACOMPANHAMENTO EM TEMPO REAL</h2>
     
-    <div id="track-auto-banner" style="display:none; text-align:center; padding:1rem; background:#FFF5EF; border-radius:12px; margin-bottom:1rem; border:1px solid var(--primary-orange);">
-      <span style="font-weight:700; color:var(--primary-orange);">🛵 Exibindo seu pedido ativo em andamento</span>
+    <div id="track-auto-banner" style="display:none; padding:1rem; background:#FFF5EF; border-radius:12px; margin-bottom:1rem; border:1px solid var(--primary-orange);">
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem;">
+        <span id="track-auto-banner-text" style="font-weight:700; color:var(--primary-orange);">🛵 Exibindo seu pedido ativo em andamento</span>
+        <button type="button" onclick="clearTrackSession()" style="font-size:0.8rem; padding:0.35rem 0.8rem; background:#E53935; color:#FFF; border:none; border-radius:6px; font-weight:700; cursor:pointer;">
+          🚪 Não é seu pedido? Limpar
+        </button>
+      </div>
     </div>
 
     <div id="track-manual-box" style="margin-bottom:1rem;">
-      <details style="cursor:pointer; color:var(--text-muted); font-size:0.9rem; margin-bottom:1rem;">
-        <summary style="font-weight:700; color:var(--primary-orange);">🔍 Rastrear outro pedido manualmente (Código / Token)</summary>
-        <div class="track-search-row" style="margin-top:0.8rem;">
-          <input type="text" id="track-code-inp" class="form-control" placeholder="Código (ex: VB-9042)">
-          <input type="text" id="track-token-inp" class="form-control" placeholder="Token de Rastreio (UUID v4)">
+      <details id="track-manual-details" style="cursor:pointer; color:var(--text-muted); font-size:0.9rem; margin-bottom:1rem;">
+        <summary style="font-weight:700; color:var(--primary-orange); padding:0.4rem 0;">🔍 Não encontrou seu pedido? Buscar manualmente</summary>
+        <div class="track-search-row" style="margin-top:0.8rem; display:flex; gap:0.5rem; flex-wrap:wrap;">
+          <input type="text" id="track-code-inp" class="form-control" placeholder="Código (ex: VB-9042)" style="flex:1; min-width:130px;">
+          <input type="text" id="track-token-inp" class="form-control" placeholder="Token de Rastreio (UUID v4)" style="flex:2; min-width:200px;">
           <button class="btn-primary" onclick="fetchOrderTracking()">BUSCAR</button>
         </div>
       </details>
@@ -428,7 +435,7 @@
 
 <!-- JAVASCRIPT ENGINE UNIFICADO -->
 <script>
-const API_URL = (window.location.port === '4000') ? '/api' : 'http://localhost:4000/api';
+const API_URL = `${window.location.origin}/api`;
 let socket = null;
 let currentUser = null;
 let cart = [];
@@ -741,10 +748,21 @@ async function submitCheckout() {
     const data = await res.json();
     if (!res.ok) { alert(data.error || 'Erro ao criar pedido.'); return; }
 
-    localStorage.setItem('villaburguer_active_order', JSON.stringify({
-      code: data.orderCode,
-      token: data.trackingToken
-    }));
+    const trackPayload = { code: data.orderCode, token: data.trackingToken };
+    localStorage.setItem('guest_order_token', JSON.stringify(trackPayload));
+    localStorage.setItem('villaburguer_active_order', JSON.stringify(trackPayload));
+
+    const trackingUrl = `${window.location.origin}/track/${data.orderCode}?token=${data.trackingToken}`;
+    history.pushState(null, '', `/track/${data.orderCode}?token=${data.trackingToken}`);
+
+    // Integração WhatsApp: formatação e envio do link de rastreamento com token
+    const clientPhoneStr = (phone || '').replace(/\D/g, '');
+    const waMsg = `🍔 *Pedido Villa Burguer (#${data.orderCode})*\n\nSeu pedido foi realizado com sucesso!\n\n📍 *Acompanhe seu pedido em tempo real pelo link abaixo:*\n${trackingUrl}`;
+    const waUrl = `https://wa.me/${clientPhoneStr || '5519981242106'}?text=${encodeURIComponent(waMsg)}`;
+    
+    if (clientPhoneStr) {
+      try { window.open(waUrl, '_blank'); } catch(e) {}
+    }
 
     if (payment === 'pix') {
       const payRes = await fetch(`${API_URL}/payments/create`, {
@@ -1102,21 +1120,91 @@ async function submitCancelOrder() {
 }
 
 // 2. RASTREAMENTO EM TEMPO REAL (#page-track)
+function clearTrackSession() {
+  localStorage.removeItem('guest_order_token');
+  localStorage.removeItem('villaburguer_active_order');
+  
+  const banner = document.getElementById('track-auto-banner');
+  if (banner) banner.style.display = 'none';
+  
+  const result = document.getElementById('track-result');
+  if (result) result.style.display = 'none';
+  
+  document.getElementById('track-code-inp').value = '';
+  document.getElementById('track-token-inp').value = '';
+  
+  const details = document.getElementById('track-manual-details');
+  if (details) details.open = true;
+  
+  history.replaceState(null, '', '/track');
+  showNotif('Sessão de rastreamento limpa.');
+}
+
 function autoLoadActiveOrderTracking() {
-  const savedActiveOrder = localStorage.getItem('villaburguer_active_order');
-  if (savedActiveOrder) {
-    try {
-      const active = JSON.parse(savedActiveOrder);
-      if (active.code && active.token) {
-        document.getElementById('track-code-inp').value = active.code;
-        document.getElementById('track-token-inp').value = active.token;
-        document.getElementById('track-auto-banner').style.display = 'block';
-        fetchOrderTracking(active.code, active.token);
-        return;
-      }
-    } catch(e) {}
+  let code = null;
+  let token = null;
+  let source = null;
+
+  // 1. Tentar ler dados de rastreio da URL (pathname / search / hash)
+  const pathParts = window.location.pathname.split('/').filter(Boolean);
+  const searchParams = new URLSearchParams(window.location.search);
+
+  if (pathParts[0] === 'track' && pathParts[1]) {
+    code = decodeURIComponent(pathParts[1]);
   }
-  document.getElementById('track-auto-banner').style.display = 'none';
+  if (searchParams.get('token')) token = searchParams.get('token');
+  if (!code && (searchParams.get('orderCode') || searchParams.get('code'))) {
+    code = searchParams.get('orderCode') || searchParams.get('code');
+  }
+
+  // Fallback hash routing (ex: #track/VB-8707?token=...)
+  if (!code && window.location.hash) {
+    const hashStr = window.location.hash.replace('#', '');
+    const hashParts = hashStr.split('?');
+    const pathInHash = hashParts[0].split('/').filter(Boolean);
+    if (pathInHash[0] === 'track' && pathInHash[1]) code = pathInHash[1];
+    if (hashParts[1]) {
+      const hParams = new URLSearchParams(hashParts[1]);
+      if (hParams.get('token')) token = hParams.get('token');
+    }
+  }
+
+  if (code && token) {
+    source = 'URL';
+  } else {
+    // 2. Fallback para localStorage (guest_order_token ou villaburguer_active_order)
+    const savedStr = localStorage.getItem('guest_order_token') || localStorage.getItem('villaburguer_active_order');
+    if (savedStr) {
+      try {
+        const active = JSON.parse(savedStr);
+        code = active.code || active.orderCode;
+        token = active.token || active.trackingToken;
+        if (code && token) source = 'localStorage';
+      } catch(e) {}
+    }
+  }
+
+  if (code && token) {
+    document.getElementById('track-code-inp').value = code;
+    document.getElementById('track-token-inp').value = token;
+    
+    const banner = document.getElementById('track-auto-banner');
+    const bannerText = document.getElementById('track-auto-banner-text');
+    if (banner) banner.style.display = 'block';
+    if (bannerText) {
+      bannerText.textContent = (source === 'URL')
+        ? `🛵 Exibindo pedido #${code} (carregado via link)`
+        : `🛵 Exibindo seu pedido ativo em andamento (#${code})`;
+    }
+    
+    fetchOrderTracking(code, token);
+  } else {
+    const banner = document.getElementById('track-auto-banner');
+    if (banner) banner.style.display = 'none';
+    
+    const details = document.getElementById('track-manual-details');
+    if (details) details.open = true;
+  }
 }
 
 async function fetchOrderTracking(codeInp, tokenInp) {
@@ -1128,6 +1216,15 @@ async function fetchOrderTracking(codeInp, tokenInp) {
     const res = await fetch(`${API_URL}/orders/track/${code}?token=${token}`);
     if (res.ok) {
       const data = await res.json();
+
+      // Persiste no localStorage
+      const activeObj = { code: data.orderCode, token: token };
+      localStorage.setItem('guest_order_token', JSON.stringify(activeObj));
+      localStorage.setItem('villaburguer_active_order', JSON.stringify(activeObj));
+
+      // Limpeza da URL visível após carregar com sucesso (exibe apenas /track/VB-XXXX na barra de endereços)
+      history.replaceState(null, '', `/track/${data.orderCode}`);
+
       document.getElementById('track-result').style.display = 'block';
       document.getElementById('tr-code').textContent = data.orderCode;
       document.getElementById('tr-client').textContent = `Cliente: ${data.clientName} · ${data.type.toUpperCase()}`;
@@ -1329,6 +1426,15 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   initHeroCarousel();
   loadMenu();
+
+  // Checagem de rota de rastreamento no carregamento inicial da página
+  const pathParts = window.location.pathname.split('/').filter(Boolean);
+  const searchParams = new URLSearchParams(window.location.search);
+  const isTrackRoute = (pathParts[0] === 'track') || searchParams.has('token') || searchParams.has('orderCode') || (window.location.hash && window.location.hash.includes('track'));
+  
+  if (isTrackRoute) {
+    selectNav('track');
+  }
 });
 </script>
 

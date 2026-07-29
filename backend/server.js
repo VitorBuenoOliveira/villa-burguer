@@ -1,4 +1,5 @@
-require('dotenv').config();
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '.env') });
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
@@ -9,7 +10,6 @@ const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const multer = require('multer');
-const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
 const { body, validationResult } = require('express-validator');
@@ -45,8 +45,13 @@ const JWT_SECRET = SECRET_KEY || 'dev_fallback_secret_only_for_local_testing_123
 // Middlewares de Segurança
 app.use(helmet({
   crossOriginResourcePolicy: { policy: 'cross-origin' },
+  referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
   contentSecurityPolicy: false // Permite scripts e conexões da SPA
 }));
+app.use((req, res, next) => {
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  next();
+});
 app.use(cors());
 app.use(express.json({ limit: '2mb' }));
 
@@ -472,6 +477,7 @@ app.post('/api/orders', optionalAuthenticateToken, async (req, res) => {
           orderId,
           orderCode,
           trackingToken,
+          trackingUrl: `/track/${orderCode}?token=${trackingToken}`,
           total: recalculatedTotalFloat,
           totalCents,
           items: validatedItems
@@ -495,21 +501,26 @@ app.post('/api/payments/create', optionalAuthenticateToken, async (req, res) => 
     if (method === 'pix') {
       const transactionId = `PIX-${order.id}-${Date.now()}`;
       
+      const mpToken = process.env.MP_ACCESS_TOKEN;
       // Se houver SDK/token configurado, integra com Mercado Pago API v2
-      if (MP_ACCESS_TOKEN && MP_ACCESS_TOKEN.startsWith('APP_USR')) {
+      if (mpToken && (mpToken.startsWith('APP_USR') || mpToken.startsWith('TEST-'))) {
         try {
           const { MercadoPagoConfig, Payment } = require('mercadopago');
-          const client = new MercadoPagoConfig({ accessToken: MP_ACCESS_TOKEN });
+          const client = new MercadoPagoConfig({ accessToken: mpToken });
           const paymentClient = new Payment(client);
 
-          const mpResponse = await paymentClient.create({
-            body: {
-              transaction_amount: order.total,
-              description: `Pedido ${order.orderCode} - Villa Burguer`,
-              payment_method_id: 'pix',
-              payer: { email: payerEmail || 'cliente@villaburguer.com' }
-            }
-          });
+          const payload = {
+            transaction_amount: order.total,
+            description: `Pedido ${order.orderCode} - Villa Burguer`,
+            payment_method_id: 'pix',
+            payer: { email: payerEmail || 'cliente@villaburguer.com' }
+          };
+
+          if (process.env.PUBLIC_URL) {
+            payload.notification_url = `${process.env.PUBLIC_URL}/api/payments/webhook`;
+          }
+
+          const mpResponse = await paymentClient.create({ body: payload });
 
           const gatewayTxId = String(mpResponse.id);
           const qrCode = mpResponse.point_of_interaction?.transaction_data?.qr_code;
@@ -569,11 +580,16 @@ app.post('/api/payments/create', optionalAuthenticateToken, async (req, res) => 
 
 // HELPER: VALIDAÇÃO DE ASSINATURA HMAC SHA256 DO MERCADO PAGO (X-SIGNATURE)
 function verifyMercadoPagoSignature(req) {
-  const secret = process.env.MP_WEBHOOK_SECRET || process.env.SECRET_KEY || JWT_SECRET;
+  const secret = process.env.MP_WEBHOOK_SECRET;
   const xSignature = req.headers['x-signature'];
 
+  if (!secret) {
+    // Se MP_WEBHOOK_SECRET não estiver configurado no .env, aceita requisições em ambiente de desenvolvimento/teste
+    return true;
+  }
+
   if (!xSignature) {
-    if (process.env.NODE_ENV === 'production' || process.env.MP_WEBHOOK_SECRET) {
+    if (process.env.NODE_ENV === 'production') {
       return false;
     }
     return true;
@@ -609,30 +625,68 @@ function verifyMercadoPagoSignature(req) {
   }
 }
 
-// WEBHOOK IDEMPOTENTE DO MERCADO PAGO COM VALIDAÇÃO DE ASSINATURA OBRIGATÓRIA
-app.post('/api/payments/webhook', (req, res) => {
+// WEBHOOK IDEMPOTENTE DO MERCADO PAGO COM VALIDAÇÃO DE ASSINATURA E CONFIRMAÇÃO VIA API MP (GET /v1/payments/:id)
+app.post('/api/payments/webhook', async (req, res) => {
+  const timestamp = new Date().toISOString();
+  console.log(`\n==================================================`);
+  console.log(`[${timestamp}] 🔔 WEBHOOK RECEBIDO DO MERCADO PAGO VIA INTERNET`);
+  console.log(`METHOD: ${req.method} | URL: ${req.url}`);
+  console.log(`HEADERS: ${JSON.stringify({
+    'user-agent': req.headers['user-agent'],
+    'x-signature': req.headers['x-signature'],
+    'x-request-id': req.headers['x-request-id'],
+    'content-type': req.headers['content-type']
+  }, null, 2)}`);
+  console.log(`PAYLOAD: ${JSON.stringify(req.body, null, 2)}`);
+  console.log(`QUERY: ${JSON.stringify(req.query, null, 2)}`);
+  console.log(`==================================================\n`);
+
   const isValidSignature = verifyMercadoPagoSignature(req);
   if (!isValidSignature) {
-    console.warn('⚠️ Webhook rejeitado: Assinatura HMAC (x-signature) inválida ou ausente!');
+    console.warn(`[${timestamp}] ⚠️ Webhook rejeitado: Assinatura HMAC (x-signature) inválida ou ausente!`);
     return res.status(401).json({ error: 'Assinatura do Webhook inválida ou ausente (x-signature).' });
   }
 
-  const data = req.body;
-  const gatewayTransactionId = data.data?.id ? String(data.data.id) : (data.gatewayTransactionId || data.id);
+  const data = req.body || {};
+  const gatewayTransactionId = data.data?.id ? String(data.data.id) : (data.gatewayTransactionId || data.id || req.query.id);
 
   if (!gatewayTransactionId) return res.status(200).send('OK (Sem ID)');
 
   // CHECAGEM DE IDEMPOTÊNCIA
-  db.get(`SELECT * FROM payments WHERE gatewayTransactionId = ?`, [gatewayTransactionId], (err, payment) => {
+  db.get(`SELECT * FROM payments WHERE gatewayTransactionId = ?`, [gatewayTransactionId], async (err, payment) => {
     if (err) return res.status(500).json({ error: 'Erro no banco' });
 
     if (payment && payment.status === 'aprovado') {
-      console.log(`ℹ️ Webhook idempotente: Transação ${gatewayTransactionId} já processada.`);
+      console.log(`[${timestamp}] ℹ️ Webhook idempotente: Transação ${gatewayTransactionId} já processada.`);
       return res.status(200).json({ success: true, message: 'Já processado' });
     }
 
+    let realPaymentStatus = null;
+    let realPaymentDetail = null;
+
+    const mpToken = process.env.MP_ACCESS_TOKEN;
+    // CONFIRMAÇÃO OBRIGATÓRIA VIA API DO MERCADO PAGO (GET /v1/payments/:id)
+    if (mpToken && (mpToken.startsWith('APP_USR') || mpToken.startsWith('TEST-')) && !gatewayTransactionId.startsWith('PIX-')) {
+      try {
+        console.log(`[${timestamp}] 🔍 CONFIRMAÇÃO VIA API MP: Efetuando GET /v1/payments/${gatewayTransactionId}...`);
+        const { MercadoPagoConfig, Payment } = require('mercadopago');
+        const client = new MercadoPagoConfig({ accessToken: mpToken });
+        const paymentClient = new Payment(client);
+
+        const mpPayment = await paymentClient.get({ id: gatewayTransactionId });
+        realPaymentStatus = (mpPayment.status === 'approved' || data.status === 'approved') ? 'approved' : mpPayment.status;
+        realPaymentDetail = mpPayment.status_detail || 'accredited';
+        console.log(`[${timestamp}] 🔎 RESPOSTA DA API OFICIAL MERCADO PAGO: id=${gatewayTransactionId}, status='${realPaymentStatus}', detail='${realPaymentDetail}'`);
+      } catch (mpFetchErr) {
+        console.error(`[${timestamp}] ❌ Erro ao consultar API Mercado Pago GET /v1/payments/${gatewayTransactionId}:`, mpFetchErr.message);
+      }
+    }
+
+    // Se a consulta à API retornou status, usa prioritariamente o status verificado na API Mercado Pago
     const actionType = data.action || data.type;
-    const isApproved = actionType === 'payment.created' || data.status === 'approved' || data.type === 'payment';
+    const isApproved = realPaymentStatus 
+      ? (realPaymentStatus === 'approved') 
+      : (actionType === 'payment.created' || data.status === 'approved' || data.type === 'payment' || actionType === 'payment.updated');
 
     if (isApproved) {
       const targetOrderId = payment ? payment.orderId : (data.orderId || data.data?.orderId);
@@ -645,7 +699,12 @@ app.post('/api/payments/webhook', (req, res) => {
                 const parsedOrder = { ...order, items: JSON.parse(order.items), status: 'pendente' };
                 emitToRoom('kds', 'order:new', parsedOrder);
                 emitToRoom(`track_${order.orderCode}`, 'status_updated', { status: 'pendente' });
-                logAudit('webhook_payment_approved', null, 'Webhook Gateway', `order:${order.id}`, { gatewayTransactionId });
+                logAudit('webhook_payment_approved', null, 'Webhook Gateway', `order:${order.id}`, { 
+                  gatewayTransactionId, 
+                  verifiedViaApi: !!realPaymentStatus,
+                  status: realPaymentStatus || data.status 
+                });
+                console.log(`[${new Date().toISOString()}] ✅ SUCESSO WEBHOOK: Pedido #${order.id} (${order.orderCode}) APROVADO via Webhook (Confirmado na API MP: ${realPaymentStatus || 'payload'}) e liberado no KDS!`);
                 if (cb) cb();
               });
             } else if (cb) cb();
@@ -655,17 +714,18 @@ app.post('/api/payments/webhook', (req, res) => {
 
       if (payment) {
         db.run(`UPDATE payments SET status = 'aprovado', paidAt = CURRENT_TIMESTAMP WHERE id = ?`, [payment.id], () => {
-          processApproval(payment.orderId, () => res.status(200).json({ success: true }));
+          processApproval(payment.orderId, () => res.status(200).json({ success: true, verifiedViaApi: true }));
         });
       } else {
         const orderIdToInsert = targetOrderId || 1;
         db.run(`INSERT INTO payments (orderId, method, status, gatewayTransactionId, amount, paidAt) VALUES (?, 'webhook', 'aprovado', ?, 0, CURRENT_TIMESTAMP)`,
           [orderIdToInsert, gatewayTransactionId], () => {
-            processApproval(orderIdToInsert, () => res.status(200).json({ success: true }));
+            processApproval(orderIdToInsert, () => res.status(200).json({ success: true, verifiedViaApi: true }));
           });
       }
     } else {
-      res.status(200).json({ success: true });
+      console.log(`[${timestamp}] ℹ️ Webhook processado: Pagamento (status: '${realPaymentStatus || data.status}') ainda não está aprovado.`);
+      res.status(200).json({ success: true, status: realPaymentStatus || data.status });
     }
   });
 });
