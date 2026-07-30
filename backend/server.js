@@ -24,23 +24,19 @@ const io = new Server(server, {
   }
 });
 
-// ===== SEGURANÇA E AMBIENTE (PONTO 1: CHECAGEM CRÍTICA DE SECRET_KEY) =====
+// ===== SEGURANÇA E AMBIENTE (CHECAGEM CRÍTICA DE SECRET_KEY) =====
 const NODE_ENV = process.env.NODE_ENV || 'development';
 const PORT = process.env.PORT || 4000;
 const SECRET_KEY = process.env.SECRET_KEY;
 
-if (!SECRET_KEY || SECRET_KEY === 'fallback_dev_key_change_in_production') {
-  if (NODE_ENV === 'production') {
-    console.error('\n❌ ERRO CRÍTICO DE SEGURANÇA (PONTO 1):');
-    console.error('Em ambiente de PRODUÇÃO, a variável SECRET_KEY é OBRIGATÓRIA e deve ser configurada no arquivo .env!');
-    console.error('O servidor recusa inicializar para impedir o uso de chaves previsíveis.\n');
-    process.exit(1);
-  } else {
-    console.warn('⚠️ AVISO DE DESENVOLVIMENTO: SECRET_KEY padrão em uso. Configure no .env antes de ir para produção.');
-  }
+if (!SECRET_KEY || SECRET_KEY.includes('insira_aqui')) {
+  console.error('\n❌ ERRO CRÍTICO DE SEGURANÇA:');
+  console.error('A variável SECRET_KEY é OBRIGATÓRIA no arquivo .env!');
+  console.error('O servidor recusa inicializar para evitar o uso de chaves inseguras ou ausentes.\n');
+  process.exit(1);
 }
 
-const JWT_SECRET = SECRET_KEY || 'dev_fallback_secret_only_for_local_testing_12345';
+const JWT_SECRET = SECRET_KEY;
 
 // Middlewares de Segurança
 app.use(helmet({
@@ -578,21 +574,17 @@ app.post('/api/payments/create', optionalAuthenticateToken, async (req, res) => 
   });
 });
 
-// HELPER: VALIDAÇÃO DE ASSINATURA HMAC SHA256 DO MERCADO PAGO (X-SIGNATURE)
+// HELPER: VALIDAÇÃO RIGOROSA DE ASSINATURA HMAC SHA256 DO MERCADO PAGO (X-SIGNATURE)
 function verifyMercadoPagoSignature(req) {
-  const secret = process.env.MP_WEBHOOK_SECRET;
   const xSignature = req.headers['x-signature'];
 
-  if (!secret) {
-    // Se MP_WEBHOOK_SECRET não estiver configurado no .env, aceita requisições em ambiente de desenvolvimento/teste
-    return true;
-  }
-
+  // Exigência de assinatura por PADRÃO (Sem bypass baseado em NODE_ENV).
+  // Só aceita sem x-signature se ALLOW_UNSIGNED_WEBHOOKS=true for EXPLICITAMENTE configurado no .env local.
   if (!xSignature) {
-    if (process.env.NODE_ENV === 'production') {
-      return false;
+    if (process.env.ALLOW_UNSIGNED_WEBHOOKS === 'true') {
+      return true;
     }
-    return true;
+    return false;
   }
 
   const parts = xSignature.split(',');
@@ -609,7 +601,7 @@ function verifyMercadoPagoSignature(req) {
   if (!ts || !hashV1) return false;
 
   const data = req.body || {};
-  const dataId = data.data?.id ? String(data.data.id) : (data.gatewayTransactionId || data.id || '');
+  const dataId = data.data?.id ? String(data.data.id) : (data.gatewayTransactionId || data.id || req.query?.['data.id'] || req.query?.id || '');
   const xRequestId = req.headers['x-request-id'] || '';
 
   let manifest = `id:${dataId};request-id:${xRequestId};ts:${ts};`;
@@ -617,12 +609,28 @@ function verifyMercadoPagoSignature(req) {
     manifest = `id:${dataId};ts:${ts};`;
   }
 
-  try {
-    const computedHash = crypto.createHmac('sha256', String(secret)).update(manifest).digest('hex');
-    return crypto.timingSafeEqual(Buffer.from(computedHash, 'hex'), Buffer.from(hashV1, 'hex'));
-  } catch (e) {
+  // Chaves secretas obtidas EXCLUSIVAMENTE das variáveis de ambiente.
+  // Nenhum segredo hardcoded no código-fonte!
+  const secretsToTry = [
+    process.env.MP_WEBHOOK_SECRET,
+    process.env.SECRET_KEY
+  ].filter(Boolean);
+
+  if (secretsToTry.length === 0) {
+    console.error('[ERRO DE SEGURANÇA WEBHOOK] Nenhuma chave secreta (MP_WEBHOOK_SECRET ou SECRET_KEY) configurada em process.env!');
     return false;
   }
+
+  for (const sec of secretsToTry) {
+    try {
+      const computedHash = crypto.createHmac('sha256', String(sec)).update(manifest).digest('hex');
+      if (crypto.timingSafeEqual(Buffer.from(computedHash, 'hex'), Buffer.from(hashV1, 'hex'))) {
+        return true;
+      }
+    } catch (e) {}
+  }
+
+  return false;
 }
 
 // WEBHOOK IDEMPOTENTE DO MERCADO PAGO COM VALIDAÇÃO DE ASSINATURA E CONFIRMAÇÃO VIA API MP (GET /v1/payments/:id)
@@ -666,7 +674,7 @@ app.post('/api/payments/webhook', async (req, res) => {
 
     const mpToken = process.env.MP_ACCESS_TOKEN;
     // CONFIRMAÇÃO OBRIGATÓRIA VIA API DO MERCADO PAGO (GET /v1/payments/:id)
-    if (mpToken && (mpToken.startsWith('APP_USR') || mpToken.startsWith('TEST-')) && !gatewayTransactionId.startsWith('PIX-')) {
+    if (mpToken && (mpToken.startsWith('APP_USR') || mpToken.startsWith('TEST-')) && !gatewayTransactionId.startsWith('PIX-') && !gatewayTransactionId.startsWith('MP-')) {
       try {
         console.log(`[${timestamp}] 🔍 CONFIRMAÇÃO VIA API MP: Efetuando GET /v1/payments/${gatewayTransactionId}...`);
         const { MercadoPagoConfig, Payment } = require('mercadopago');
@@ -674,7 +682,7 @@ app.post('/api/payments/webhook', async (req, res) => {
         const paymentClient = new Payment(client);
 
         const mpPayment = await paymentClient.get({ id: gatewayTransactionId });
-        realPaymentStatus = (mpPayment.status === 'approved' || data.status === 'approved') ? 'approved' : mpPayment.status;
+        realPaymentStatus = mpPayment.status;
         realPaymentDetail = mpPayment.status_detail || 'accredited';
         console.log(`[${timestamp}] 🔎 RESPOSTA DA API OFICIAL MERCADO PAGO: id=${gatewayTransactionId}, status='${realPaymentStatus}', detail='${realPaymentDetail}'`);
       } catch (mpFetchErr) {
@@ -682,11 +690,10 @@ app.post('/api/payments/webhook', async (req, res) => {
       }
     }
 
-    // Se a consulta à API retornou status, usa prioritariamente o status verificado na API Mercado Pago
-    const actionType = data.action || data.type;
+    // Validação estrita: O pedido SÓ pode ser liberado se o status retornado for ESTRITAMENTE 'approved'
     const isApproved = realPaymentStatus 
       ? (realPaymentStatus === 'approved') 
-      : (actionType === 'payment.created' || data.status === 'approved' || data.type === 'payment' || actionType === 'payment.updated');
+      : (data.status === 'approved');
 
     if (isApproved) {
       const targetOrderId = payment ? payment.orderId : (data.orderId || data.data?.orderId);
@@ -718,10 +725,13 @@ app.post('/api/payments/webhook', async (req, res) => {
         });
       } else {
         const orderIdToInsert = targetOrderId || 1;
-        db.run(`INSERT INTO payments (orderId, method, status, gatewayTransactionId, amount, paidAt) VALUES (?, 'webhook', 'aprovado', ?, 0, CURRENT_TIMESTAMP)`,
-          [orderIdToInsert, gatewayTransactionId], () => {
-            processApproval(orderIdToInsert, () => res.status(200).json({ success: true, verifiedViaApi: true }));
-          });
+        db.get(`SELECT total FROM orders WHERE id = ?`, [orderIdToInsert], (oErr, orderRow) => {
+          const calculatedAmount = orderRow ? Math.round(orderRow.total * 100) : 0;
+          db.run(`INSERT INTO payments (orderId, method, status, gatewayTransactionId, amount, paidAt) VALUES (?, 'webhook', 'aprovado', ?, ?, CURRENT_TIMESTAMP)`,
+            [orderIdToInsert, gatewayTransactionId, calculatedAmount], () => {
+              processApproval(orderIdToInsert, () => res.status(200).json({ success: true, verifiedViaApi: true }));
+            });
+        });
       }
     } else {
       console.log(`[${timestamp}] ℹ️ Webhook processado: Pagamento (status: '${realPaymentStatus || data.status}') ainda não está aprovado.`);

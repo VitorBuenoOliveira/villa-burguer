@@ -1,6 +1,7 @@
 /**
  * TESTE ESPECÍFICO DE ESTORNO DE PAGAMENTO (POST /api/payments/:id/refund) E WEBHOK MERCADO PAGO
  */
+require('dotenv').config();
 const http = require('http');
 const crypto = require('crypto');
 
@@ -50,7 +51,7 @@ async function runRefundTest() {
   console.log('💳 INICIANDO TESTE DO FLUXO DE ESTORNO & INTEGRAÇÃO MERCADO PAGO');
   console.log('===================================================================\n');
 
-  const SECRET = process.env.SECRET_KEY || 'dev_fallback_secret_only_for_local_testing_12345';
+  const SECRET = process.env.MP_WEBHOOK_SECRET || process.env.SECRET_KEY || 'dev_fallback_secret_only_for_local_testing_12345';
 
   // 1. Logar como Admin
   const adminLogin = await request('/login', {
@@ -72,7 +73,7 @@ async function runRefundTest() {
   });
 
   const orderId = orderRes.body.orderId;
-  const txId = `MP-SANDBOX-REFUND-${orderId}-${Date.now()}`;
+  const txId = `PIX-REFUND-${orderId}-${Date.now()}`;
   console.log(`   Pedido #${orderId} (${orderRes.body.orderCode}) gerado.`);
 
   // 3. Aprovar via Webhook Assinado legítimo
@@ -84,7 +85,7 @@ async function runRefundTest() {
   await request('/payments/webhook', {
     method: 'POST',
     headers: { 'x-signature': validSignature, 'x-request-id': xRequestId },
-    body: { action: 'payment.created', type: 'payment', data: { id: txId }, orderId }
+    body: { action: 'payment.created', type: 'payment', data: { id: txId }, status: 'approved', orderId }
   });
 
   // 4. Consultar o pagamento recém-criado

@@ -2,9 +2,19 @@
  * BATERIA DE TESTES AUTOMATIZADA DE SEGURANÇA E FUNCIONALIDADES (VILLA BURGUER)
  * Testa os 6 pontos do Verification Plan no servidor real.
  */
+require('dotenv').config();
 const http = require('http');
+const crypto = require('crypto');
 
 const BASE_URL = 'http://localhost:4000/api';
+const SECRET = process.env.MP_WEBHOOK_SECRET || process.env.SECRET_KEY;
+
+function generateMercadoPagoSignature(secret, dataId, xRequestId, ts) {
+  let manifest = `id:${dataId};request-id:${xRequestId};ts:${ts};`;
+  if (!xRequestId) manifest = `id:${dataId};ts:${ts};`;
+  const hash = crypto.createHmac('sha256', secret).update(manifest).digest('hex');
+  return `ts=${ts},v1=${hash}`;
+}
 
 async function request(path, options = {}) {
   return new Promise((resolve, reject) => {
@@ -104,16 +114,24 @@ async function runAllTests() {
     const fakeTxId = `MP-TX-IDEMPOTENCY-${Date.now()}`;
     
     console.log(`➡️  1ª Chamada Webhook para transação ${fakeTxId}...`);
+    const ts1 = String(Date.now());
+    const reqId1 = `REQ-IDEMP1-${Date.now()}`;
+    const sig1 = generateMercadoPagoSignature(SECRET, fakeTxId, reqId1, ts1);
     const res3_1 = await request('/payments/webhook', {
       method: 'POST',
-      body: { action: 'payment.created', type: 'payment', data: { id: fakeTxId }, orderId: testOrderId }
+      headers: { 'x-signature': sig1, 'x-request-id': reqId1 },
+      body: { action: 'payment.created', type: 'payment', data: { id: fakeTxId }, status: 'approved', orderId: testOrderId }
     });
     console.log(`STATUS HTTP: ${res3_1.status} | Resposta:`, res3_1.body);
 
     console.log(`➡️  2ª Chamada Webhook com o MESMO gatewayTransactionId (${fakeTxId})...`);
+    const ts2 = String(Date.now());
+    const reqId2 = `REQ-IDEMP2-${Date.now()}`;
+    const sig2 = generateMercadoPagoSignature(SECRET, fakeTxId, reqId2, ts2);
     const res3_2 = await request('/payments/webhook', {
       method: 'POST',
-      body: { action: 'payment.created', type: 'payment', data: { id: fakeTxId }, orderId: testOrderId }
+      headers: { 'x-signature': sig2, 'x-request-id': reqId2 },
+      body: { action: 'payment.created', type: 'payment', data: { id: fakeTxId }, status: 'approved', orderId: testOrderId }
     });
     console.log(`STATUS HTTP: ${res3_2.status} | Resposta:`, res3_2.body);
 
@@ -177,12 +195,17 @@ async function runAllTests() {
     console.log(`  String Pix Copia e Cola: ${payPixRes.body.qrCode.substring(0, 60)}...`);
 
     console.log('3. Simulando confirmação do pagamento via Webhook...');
+    const tsPix = String(Date.now());
+    const reqIdPix = `REQ-PIX-${Date.now()}`;
+    const sigPix = generateMercadoPagoSignature(SECRET, payPixRes.body.gatewayTransactionId, reqIdPix, tsPix);
     const pixWebhookRes = await request('/payments/webhook', {
       method: 'POST',
+      headers: { 'x-signature': sigPix, 'x-request-id': reqIdPix },
       body: {
         action: 'payment.created',
         type: 'payment',
         data: { id: payPixRes.body.gatewayTransactionId },
+        status: 'approved',
         orderId: pixOrderId
       }
     });

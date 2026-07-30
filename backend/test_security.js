@@ -2,6 +2,7 @@
  * TESTES ADICIONAIS DE SEGURANÇA DE PAGAMENTO E ASSINATURA HMAC (MERCADO PAGO)
  * Atende às 3 confirmações requeridas antes da aprovação final.
  */
+require('dotenv').config();
 const http = require('http');
 const crypto = require('crypto');
 
@@ -151,7 +152,7 @@ async function runSecurityAudit() {
       'x-signature': validSignature,
       'x-request-id': xRequestId
     },
-    body: { action: 'payment.created', type: 'payment', data: { id: txId }, orderId }
+    body: { action: 'payment.created', type: 'payment', data: { id: txId }, status: 'approved', orderId }
   });
 
   console.log(`   Status HTTP retornado: ${validWebhookRes.status} | Resposta:`, validWebhookRes.body);
